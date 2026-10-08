@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 use bevy_pipe_core::{
     ARENA_HEIGHT, ARENA_WIDTH, ArenaMapDocument, Cell, Direction, PlayerInput, Simulation,
@@ -5,11 +7,25 @@ use bevy_pipe_core::{
 };
 
 const CELL_SIZE: f32 = 56.0;
+const KEY_MOVE_DELAY_MS: u64 = 180;
 const MAP_JSON: &str = include_str!("../../../assets/maps/stage1.json");
 
 #[derive(Resource)]
 struct ArenaRuntime {
     simulation: Simulation,
+}
+
+#[derive(Resource)]
+struct KeyboardInputState {
+    move_elapsed: Duration,
+}
+
+impl Default for KeyboardInputState {
+    fn default() -> Self {
+        Self {
+            move_elapsed: Duration::from_millis(KEY_MOVE_DELAY_MS),
+        }
+    }
 }
 
 #[derive(Component)]
@@ -41,6 +57,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(ArenaRuntime { simulation })
+        .insert_resource(KeyboardInputState::default())
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, step_simulation)
         .add_systems(Update, (sync_players, sync_walls, sync_bombs))
@@ -92,35 +109,55 @@ fn setup(mut commands: Commands, runtime: Res<ArenaRuntime>) {
             },
             Sprite::from_color(actor_color(player.actor), Vec2::splat(CELL_SIZE - 12.0)),
             Transform::from_translation(cell_translation(player.cell, 2.0)),
+            Visibility::Visible,
         ));
     }
 }
 
-fn step_simulation(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ArenaRuntime>) {
+fn step_simulation(
+    time: Res<Time<Fixed>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut input_state: ResMut<KeyboardInputState>,
+    mut runtime: ResMut<ArenaRuntime>,
+) {
+    input_state.move_elapsed = input_state.move_elapsed.saturating_add(time.delta());
+    let move_ready = input_state.move_elapsed >= Duration::from_millis(KEY_MOVE_DELAY_MS);
+    let player_one_direction = if move_ready {
+        direction_from_keys(
+            &keys,
+            KeyCode::KeyW,
+            KeyCode::KeyD,
+            KeyCode::KeyS,
+            KeyCode::KeyA,
+        )
+    } else {
+        Direction::None
+    };
+    let player_two_direction = if move_ready {
+        direction_from_keys(
+            &keys,
+            KeyCode::ArrowUp,
+            KeyCode::ArrowRight,
+            KeyCode::ArrowDown,
+            KeyCode::ArrowLeft,
+        )
+    } else {
+        Direction::None
+    };
+    let movement_requested = !matches!(player_one_direction, Direction::None)
+        || !matches!(player_two_direction, Direction::None);
     let tick = runtime.simulation.state.tick;
     let frame = TickInputFrame::new(
         tick,
         vec![
             PlayerInput {
                 player: 1,
-                direction: direction_from_keys(
-                    &keys,
-                    KeyCode::KeyW,
-                    KeyCode::KeyD,
-                    KeyCode::KeyS,
-                    KeyCode::KeyA,
-                ),
+                direction: player_one_direction,
                 place_bomb: keys.pressed(KeyCode::Space),
             },
             PlayerInput {
                 player: 2,
-                direction: direction_from_keys(
-                    &keys,
-                    KeyCode::ArrowUp,
-                    KeyCode::ArrowRight,
-                    KeyCode::ArrowDown,
-                    KeyCode::ArrowLeft,
-                ),
+                direction: player_two_direction,
                 place_bomb: keys.pressed(KeyCode::Enter),
             },
         ],
@@ -129,6 +166,9 @@ fn step_simulation(keys: Res<ButtonInput<KeyCode>>, mut runtime: ResMut<ArenaRun
 
     match runtime.simulation.step(&frame) {
         Ok(result) => {
+            if movement_requested {
+                input_state.move_elapsed = Duration::ZERO;
+            }
             for event in result.events {
                 info!(tick = result.tick, ?event, "presentation event");
             }
