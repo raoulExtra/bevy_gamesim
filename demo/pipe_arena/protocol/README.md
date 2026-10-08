@@ -29,7 +29,7 @@ repeat player_count:
 
 Frames are sorted by player ID, reject duplicate IDs, reject unknown direction values, reject invalid booleans, and reject trailing bytes. `PROTOCOL_VERSION` is currently `1`; incompatible changes require a version change or migration.
 
-State hashes use canonical fixed-width little-endian state bytes and FNV-1a 64. The hash includes protocol version, ruleset ID, tick, arena dimensions, sorted player state, sorted bomb state, sorted destructible-wall state, and the next bomb ID.
+State hashes use canonical fixed-width little-endian state bytes and FNV-1a 64. The hash includes protocol version, ruleset ID, tick, arena dimensions, sorted player state, sorted bomb state, sorted indestructible-wall state, sorted destructible-wall state, and the next bomb ID.
 
 ## Boundary flow
 
@@ -54,6 +54,7 @@ The project uses different formats for authored data and authority-facing data:
 | Data | Format | Rule |
 | --- | --- | --- |
 | Arena maps and asset manifests | JSON | Cross-engine, versioned, validated before use |
+| Authored input fixtures | JSON | Human-readable source converted to canonical `TickInputFrame` bytes |
 | Tick inputs and replay streams | Canonical binary | Fixed-width little-endian fields; no parser-dependent representation |
 | Authoritative state hashes | Canonical binary state bytes | Hash the normalized state, never raw JSON |
 | Rust-only tooling configuration | TOML | Not part of the simulation protocol |
@@ -74,7 +75,7 @@ Authored JSON is input data, not authority. The loader MUST:
 
 Authoritative JSON values MUST use integer coordinates, IDs, timers, and counts. Floating-point values are excluded from Stage 1 authoritative data.
 
-Example map metadata:
+The checked-in Stage 1 map is [`assets/maps/stage1.json`](../assets/maps/stage1.json). The checked-in file-driven input and expected-output fixtures are [`replays/stage1-input.json`](../replays/stage1-input.json) and [`replays/stage1-expected.json`](../replays/stage1-expected.json).
 
 ```json
 {
@@ -82,6 +83,8 @@ Example map metadata:
   "ruleset_id": "pipe_arena_stage1",
   "width": 13,
   "height": 11,
+  "indestructible_walls": [{ "x": 2, "y": 2 }],
+  "destructible_walls": [{ "x": 3, "y": 3 }],
   "spawns": [
     { "actor": 1, "x": 1, "y": 1 },
     { "actor": 2, "x": 11, "y": 9 }

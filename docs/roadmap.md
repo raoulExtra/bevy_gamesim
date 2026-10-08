@@ -28,18 +28,19 @@ Responsibilities:
 
 ## Stage 1: deterministic local loop
 
-Implemented in `crates/bevy_pipe_core`:
+Implemented in `crates/bevy_pipe_core` and `demo/pipe_arena`:
 
 - explicit simulation tick;
 - deterministic, versioned input frames;
+- versioned JSON map loading and validation;
 - bounded typed intent and command buffers;
 - a read-only `WorldView` and Rust gameplay interpreter;
 - authority validation and stable command ordering;
 - canonical state bytes and FNV-1a 64 state hashes;
-- replay recording and verification fixtures; and
-- a Pipe Arena Stage 1 scripted scenario.
+- file-driven expected command/event/hash fixtures with first-divergence reporting; and
+- a Bevy presentation client consuming authoritative state and events.
 
-Acceptance: identical initial state and input stream produce identical per-tick hashes in repeated runs. The executable check is `cargo run -p bevy_pipe_core --example stage1`.
+Acceptance: identical initial state and input stream produce identical per-tick hashes in repeated runs, and the checked-in fixture matches commands, events, rejections, and hashes. The executable check is `cargo run -p bevy_pipe_core --example stage1`.
 
 ## Stage 2: replay diagnostics
 
@@ -47,7 +48,6 @@ Build on the Stage 1 replay contract with:
 
 - persistent replay file format and metadata;
 - seeking and checkpoints;
-- first-divergence diagnostics;
 - command/event trace inspection; and
 - deterministic random streams.
 

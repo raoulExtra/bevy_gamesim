@@ -2,6 +2,12 @@
 
 Store recorded input streams and small deterministic fixtures here.
 
+The checked-in Stage 1 fixture pair is `stage1-input.json` and `stage1-expected.json`. The input loader converts the reviewable JSON frames into canonical binary `TickInputFrame` values; the expected file pins per-tick commands, presentation events, rejections, and state hashes. Run the comparison with:
+
+```sh
+cargo run -p bevy_pipe_core --example stage1
+```
+
 A replay should include:
 
 - protocol version;

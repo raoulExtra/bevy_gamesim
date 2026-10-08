@@ -1,0 +1,189 @@
+{
+  "protocol_version": 1,
+  "ruleset_id": "pipe_arena_stage1",
+  "initial_state_hash": 5318140478865772391,
+  "ticks": [
+    {
+      "tick": 0,
+      "commands": [
+        {
+          "Move": {
+            "actor": 1,
+            "from": {
+              "x": 1,
+              "y": 1
+            },
+            "to": {
+              "x": 2,
+              "y": 1
+            }
+          }
+        },
+        {
+          "Move": {
+            "actor": 2,
+            "from": {
+              "x": 11,
+              "y": 9
+            },
+            "to": {
+              "x": 10,
+              "y": 9
+            }
+          }
+        }
+      ],
+      "events": [],
+      "rejections": [],
+      "state_hash": 17710041983375572884
+    },
+    {
+      "tick": 1,
+      "commands": [
+        {
+          "Move": {
+            "actor": 1,
+            "from": {
+              "x": 2,
+              "y": 1
+            },
+            "to": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        },
+        {
+          "Move": {
+            "actor": 2,
+            "from": {
+              "x": 10,
+              "y": 9
+            },
+            "to": {
+              "x": 9,
+              "y": 9
+            }
+          }
+        }
+      ],
+      "events": [],
+      "rejections": [],
+      "state_hash": 699427025130848489
+    },
+    {
+      "tick": 2,
+      "commands": [
+        {
+          "PlaceBomb": {
+            "actor": 1,
+            "bomb": 1,
+            "cell": {
+              "x": 3,
+              "y": 1
+            },
+            "fuse_ticks": 3
+          }
+        }
+      ],
+      "events": [
+        {
+          "BombPlaced": {
+            "bomb": 1,
+            "cell": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        }
+      ],
+      "rejections": [],
+      "state_hash": 7276471591099413058
+    },
+    {
+      "tick": 3,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 16539628630676980584
+    },
+    {
+      "tick": 4,
+      "commands": [
+        {
+          "DetonateBomb": {
+            "bomb": 1,
+            "cell": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        },
+        {
+          "EliminatePlayer": {
+            "actor": 1
+          }
+        },
+        {
+          "DestroyWall": {
+            "cell": {
+              "x": 3,
+              "y": 3
+            }
+          }
+        }
+      ],
+      "events": [
+        {
+          "BombExploded": {
+            "bomb": 1,
+            "cell": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        },
+        {
+          "PlayerDefeated": {
+            "actor": 1,
+            "cell": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        },
+        {
+          "WallDestroyed": {
+            "cell": {
+              "x": 3,
+              "y": 3
+            }
+          }
+        }
+      ],
+      "rejections": [],
+      "state_hash": 16188894132661872899
+    },
+    {
+      "tick": 5,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 4453635693762992520
+    },
+    {
+      "tick": 6,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 16778269499922572249
+    },
+    {
+      "tick": 7,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 8900929716803834358
+    }
+  ]
+}

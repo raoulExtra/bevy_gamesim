@@ -2,7 +2,7 @@
 
 A Rust-owned, deterministic game-simulation architecture built as composable Bevy plugins.
 
-> **Status:** design and Stage 1 implementation, with a replay verification fixture. The repository is proving the deterministic local loop before expanding to rollback, multiplayer, or external engine adapters.
+> **Status:** design and Stage 1 implementation, with a versioned map, file-driven input/output fixtures, divergence reporting, and a Bevy presentation client. The repository is proving the deterministic local loop before expanding to rollback, multiplayer, or external engine adapters.
 
 Bevy GameSim adds explicit simulation ticks, typed pipe contracts, authoritative command application, replay, rollback, multiplayer correction, and capability-scoped gameplay interpreters without replacing Bevy's ECS or renderer.
 
@@ -42,7 +42,7 @@ bevy_gamesim/
 ├── requi/                project requirements
 ├── crates/               Rust simulation and protocol implementation
 └── demo/
-    └── pipe_arena/       Pipe Arena cross-engine demonstration
+    └── pipe_arena/       Pipe Arena map, fixtures, protocol, and Bevy client
 ```
 
 The demo is an original Bomberman-inspired grid arena. It is a technical demonstration, not a use of commercial Bomberman assets, names, sounds, or branding.

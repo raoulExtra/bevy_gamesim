@@ -1,6 +1,6 @@
 # Pipe Arena
 
-An original Bomberman-inspired arena for proving the Bevy GameSim pipe architecture. Stage 1 currently runs as an engine-neutral Rust simulation; Bevy, Godot, Unity, and Unreal clients are later presentation targets.
+An original Bomberman-inspired arena for proving the Bevy GameSim pipe architecture. Stage 1 runs as an engine-neutral Rust simulation with a file-driven map/input/output fixture pipeline and a Bevy presentation client.
 
 The demo is an original specification. Do not add commercial Bomberman assets, names, sounds, or branding.
 
@@ -13,7 +13,7 @@ The demo is an original specification. Do not add commercial Bomberman assets, n
 - protected Rust/WASM interpretation; and
 - interchangeable engine presentation clients.
 
-Only the first two goals plus basic replay verification are implemented in Stage 1.
+Stage 1 includes the deterministic simulation, JSON map/input/output fixtures, file-driven divergence reporting, and the Bevy presentation client.
 
 ## Layout
 
@@ -40,11 +40,12 @@ Stage 1 implements:
 - four-direction grid movement;
 - bomb placement;
 - fixed fuse and blast rules;
-- destructible walls;
-- player elimination; and
-- deterministic hashes and replay verification.
+- indestructible and destructible walls;
+- player elimination;
+- deterministic hashes and replay verification; and
+- a Bevy client that renders authoritative state and logs presentation events.
 
-Later stages add persistent replay files, rollback, score/round rules, power-ups, network correction, and presentation clients.
+Later stages add persistent replay files, rollback, score/round rules, power-ups, network correction, and additional engine adapters.
 
 ## Authority split
 
@@ -53,7 +54,7 @@ Rust simulation:  state, rules, collision, bombs, damage, replay
 Engine client:    input capture, rendering, camera, animation, audio, UI
 ```
 
-Future engine clients will consume versioned state snapshots/deltas and presentation events; they do not independently decide gameplay outcomes.
+The Bevy client consumes authoritative state and presentation events; it does not independently decide gameplay outcomes.
 
 ## Asset rules
 
@@ -63,4 +64,4 @@ Future engine clients will consume versioned state snapshots/deltas and presenta
 - Do not pass engine object pointers through the simulation protocol.
 - Put attribution and license information beside third-party assets.
 
-See `assets/README.md`, `protocol/README.md`, and `docs/test-scenarios.md` before adding files.
+See `assets/README.md`, `protocol/README.md`, and `docs/test-scenarios.md` before adding files. Run the file-driven fixture with `cargo run -p bevy_pipe_core --example stage1`.

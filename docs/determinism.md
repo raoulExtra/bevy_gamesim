@@ -114,7 +114,7 @@ Ordering MUST NOT depend on hash-map iteration, packet arrival, thread completio
 - state vectors are traversed by stable actor, bomb, and cell ordering;
 - no floating-point values or random source are used;
 - input, intent, command, event, and rejection buffers are bounded; and
-- the state hash is FNV-1a 64 over canonical little-endian state bytes.
+- the state hash is FNV-1a 64 over canonical little-endian state bytes, including both indestructible and destructible wall state.
 
 The Stage 1 wire layout and hash inclusion list are specified in `demo/pipe_arena/protocol/README.md`.
 
@@ -122,7 +122,7 @@ The Stage 1 wire layout and hash inclusion list are specified in `demo/pipe_aren
 
 Human-authored maps and asset manifests use versioned JSON because they are consumed by multiple engine adapters. JSON is parsed into validated typed structures and normalized before it affects simulation. Raw JSON bytes are never authoritative and never hashed.
 
-Tick inputs, replay streams, and authoritative state use canonical binary formats with fixed-width little-endian fields. TOML is reserved for Rust-only tooling configuration. YAML is excluded from authoritative data because parser-specific typing and equivalent representations complicate cross-language determinism.
+The checked-in input fixture is also JSON for reviewability; the loader converts each frame to the canonical `TickInputFrame` binary representation before simulation. Tick inputs and replay streams use canonical binary formats with fixed-width little-endian fields. TOML is reserved for Rust-only tooling configuration. YAML is excluded from authoritative data because parser-specific typing and equivalent representations complicate cross-language determinism.
 
 ## State hashing
 

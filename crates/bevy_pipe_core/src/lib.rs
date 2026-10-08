@@ -4,9 +4,11 @@
 //! protocol and authoritative local loop that a Bevy plugin and external engine
 //! adapters can consume without introducing a second gameplay authority.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub const PROTOCOL_VERSION: u16 = 1;
+pub const MAP_SCHEMA_VERSION: u16 = 1;
 pub const RULESET_ID: &str = "pipe_arena_stage1";
 pub const ARENA_WIDTH: u8 = 13;
 pub const ARENA_HEIGHT: u8 = 11;
@@ -20,7 +22,7 @@ pub const BOMB_RADIUS: u8 = 2;
 
 pub type StateHash = u64;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Cell {
     pub x: u8,
     pub y: u8,
@@ -37,7 +39,7 @@ impl Cell {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[repr(u8)]
 pub enum Direction {
     None = 0,
@@ -70,14 +72,14 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PlayerInput {
     pub player: u8,
     pub direction: Direction,
     pub place_bomb: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TickInputFrame {
     pub tick: u64,
     pub players: Vec<PlayerInput>,
@@ -140,13 +142,382 @@ impl TickInputFrame {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapCell {
+    pub x: u8,
+    pub y: u8,
+}
+
+impl MapCell {
+    fn as_cell(&self) -> Cell {
+        Cell::new(self.x, self.y)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapSpawn {
+    pub actor: u8,
+    pub x: u8,
+    pub y: u8,
+}
+
+impl MapSpawn {
+    fn cell(&self) -> Cell {
+        Cell::new(self.x, self.y)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArenaMapDocument {
+    pub schema_version: u16,
+    pub ruleset_id: String,
+    pub width: u8,
+    pub height: u8,
+    #[serde(default)]
+    pub indestructible_walls: Vec<MapCell>,
+    #[serde(default)]
+    pub destructible_walls: Vec<MapCell>,
+    pub spawns: Vec<MapSpawn>,
+}
+
+impl ArenaMapDocument {
+    pub fn load_json(json: &str) -> Result<Self, MapError> {
+        serde_json::from_str(json).map_err(|error| MapError::Json(error.to_string()))
+    }
+
+    pub fn validate(&self) -> Result<ArenaMap, MapError> {
+        if self.schema_version != MAP_SCHEMA_VERSION {
+            return Err(MapError::UnsupportedSchema(self.schema_version));
+        }
+        if self.ruleset_id != RULESET_ID {
+            return Err(MapError::RulesetMismatch(self.ruleset_id.clone()));
+        }
+        if self.width != ARENA_WIDTH || self.height != ARENA_HEIGHT {
+            return Err(MapError::InvalidDimensions {
+                width: self.width,
+                height: self.height,
+            });
+        }
+        if self.spawns.is_empty() {
+            return Err(MapError::NoPlayers);
+        }
+        if self.spawns.len() > MAX_PLAYERS {
+            return Err(MapError::TooManyPlayers(self.spawns.len()));
+        }
+
+        let mut indestructible_walls = self
+            .indestructible_walls
+            .iter()
+            .map(MapCell::as_cell)
+            .collect::<Vec<_>>();
+        let mut destructible_walls = self
+            .destructible_walls
+            .iter()
+            .map(MapCell::as_cell)
+            .collect::<Vec<_>>();
+        indestructible_walls.sort_unstable();
+        destructible_walls.sort_unstable();
+
+        validate_cells("indestructible wall", &indestructible_walls)?;
+        validate_cells("destructible wall", &destructible_walls)?;
+        for cell in &indestructible_walls {
+            if destructible_walls.contains(cell) {
+                return Err(MapError::OverlappingWalls(*cell));
+            }
+        }
+
+        let mut players = Vec::with_capacity(self.spawns.len());
+        for spawn in &self.spawns {
+            if spawn.actor == 0 {
+                return Err(MapError::InvalidActor(spawn.actor));
+            }
+            let cell = spawn.cell();
+            if players
+                .iter()
+                .any(|player: &PlayerState| player.actor == spawn.actor)
+            {
+                return Err(MapError::DuplicateActor(spawn.actor));
+            }
+            if players
+                .iter()
+                .any(|player: &PlayerState| player.cell == cell)
+            {
+                return Err(MapError::DuplicateSpawnCell(cell));
+            }
+            if is_border(cell)
+                || indestructible_walls.contains(&cell)
+                || destructible_walls.contains(&cell)
+            {
+                return Err(MapError::SpawnOnBlockedCell(cell));
+            }
+            validate_cell("spawn", cell)?;
+            players.push(PlayerState {
+                actor: spawn.actor,
+                cell,
+                alive: true,
+            });
+        }
+        players.sort_by_key(|player| player.actor);
+
+        Ok(ArenaMap {
+            players,
+            indestructible_walls,
+            destructible_walls,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaMap {
+    pub players: Vec<PlayerState>,
+    pub indestructible_walls: Vec<Cell>,
+    pub destructible_walls: Vec<Cell>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MapError {
+    Json(String),
+    UnsupportedSchema(u16),
+    RulesetMismatch(String),
+    InvalidDimensions { width: u8, height: u8 },
+    TooManyPlayers(usize),
+    NoPlayers,
+    InvalidActor(u8),
+    OutOfBounds { kind: &'static str, cell: Cell },
+    BorderCell { kind: &'static str, cell: Cell },
+    DuplicateCell { kind: &'static str, cell: Cell },
+    OverlappingWalls(Cell),
+    DuplicateActor(u8),
+    DuplicateSpawnCell(Cell),
+    SpawnOnBlockedCell(Cell),
+}
+
+impl fmt::Display for MapError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "map validation failed: {self:?}")
+    }
+}
+
+impl std::error::Error for MapError {}
+
+fn validate_cells(kind: &'static str, cells: &[Cell]) -> Result<(), MapError> {
+    for &cell in cells {
+        validate_cell(kind, cell)?;
+        if cells.iter().filter(|candidate| **candidate == cell).count() > 1 {
+            return Err(MapError::DuplicateCell { kind, cell });
+        }
+    }
+    Ok(())
+}
+
+fn validate_cell(kind: &'static str, cell: Cell) -> Result<(), MapError> {
+    if cell.x >= ARENA_WIDTH || cell.y >= ARENA_HEIGHT {
+        return Err(MapError::OutOfBounds { kind, cell });
+    }
+    if is_border(cell) && kind.contains("wall") {
+        return Err(MapError::BorderCell { kind, cell });
+    }
+    Ok(())
+}
+
+fn is_border(cell: Cell) -> bool {
+    cell.x == 0 || cell.y == 0 || cell.x + 1 == ARENA_WIDTH || cell.y + 1 == ARENA_HEIGHT
+}
+
+pub fn default_map_document() -> ArenaMapDocument {
+    ArenaMapDocument {
+        schema_version: MAP_SCHEMA_VERSION,
+        ruleset_id: RULESET_ID.to_owned(),
+        width: ARENA_WIDTH,
+        height: ARENA_HEIGHT,
+        indestructible_walls: (2..ARENA_WIDTH - 1)
+            .step_by(2)
+            .flat_map(|x| {
+                (2..ARENA_HEIGHT - 1)
+                    .step_by(2)
+                    .map(move |y| MapCell { x, y })
+            })
+            .collect(),
+        destructible_walls: vec![
+            MapCell { x: 3, y: 3 },
+            MapCell { x: 5, y: 3 },
+            MapCell { x: 7, y: 3 },
+            MapCell { x: 9, y: 3 },
+            MapCell { x: 3, y: 5 },
+            MapCell { x: 5, y: 5 },
+            MapCell { x: 7, y: 5 },
+            MapCell { x: 9, y: 5 },
+            MapCell { x: 3, y: 7 },
+            MapCell { x: 5, y: 7 },
+            MapCell { x: 7, y: 7 },
+            MapCell { x: 9, y: 7 },
+        ],
+        spawns: vec![
+            MapSpawn {
+                actor: 1,
+                x: 1,
+                y: 1,
+            },
+            MapSpawn {
+                actor: 2,
+                x: 11,
+                y: 9,
+            },
+        ],
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputFixtureDocument {
+    pub protocol_version: u16,
+    pub ruleset_id: String,
+    pub frames: Vec<InputFixtureFrame>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputFixtureFrame {
+    pub tick: u64,
+    pub players: Vec<InputFixturePlayer>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputFixturePlayer {
+    pub player: u8,
+    pub direction: String,
+    pub place_bomb: bool,
+}
+
+impl InputFixtureDocument {
+    pub fn load_json(json: &str) -> Result<Self, FixtureError> {
+        serde_json::from_str(json).map_err(|error| FixtureError::Json(error.to_string()))
+    }
+
+    pub fn to_frames(&self) -> Result<Vec<TickInputFrame>, FixtureError> {
+        if self.protocol_version != PROTOCOL_VERSION {
+            return Err(FixtureError::UnsupportedProtocol(self.protocol_version));
+        }
+        if self.ruleset_id != RULESET_ID {
+            return Err(FixtureError::RulesetMismatch(self.ruleset_id.clone()));
+        }
+
+        self.frames
+            .iter()
+            .map(|frame| {
+                let players = frame
+                    .players
+                    .iter()
+                    .map(|player| {
+                        Ok(PlayerInput {
+                            player: player.player,
+                            direction: parse_direction(&player.direction).ok_or_else(|| {
+                                FixtureError::InvalidDirection {
+                                    tick: frame.tick,
+                                    player: player.player,
+                                    value: player.direction.clone(),
+                                }
+                            })?,
+                            place_bomb: player.place_bomb,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, FixtureError>>()?;
+                TickInputFrame::new(frame.tick, players).map_err(FixtureError::Protocol)
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedRunDocument {
+    pub protocol_version: u16,
+    pub ruleset_id: String,
+    pub initial_state_hash: StateHash,
+    pub ticks: Vec<ExpectedTickDocument>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedTickDocument {
+    pub tick: u64,
+    pub commands: Vec<AuthoritativeCommand>,
+    pub events: Vec<PresentationEvent>,
+    pub rejections: Vec<Rejection>,
+    pub state_hash: StateHash,
+}
+
+impl ExpectedRunDocument {
+    pub fn load_json(json: &str) -> Result<Self, FixtureError> {
+        serde_json::from_str(json).map_err(|error| FixtureError::Json(error.to_string()))
+    }
+
+    pub fn from_results(initial_state_hash: StateHash, results: &[TickResult]) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            ruleset_id: RULESET_ID.to_owned(),
+            initial_state_hash,
+            ticks: results
+                .iter()
+                .map(|result| ExpectedTickDocument {
+                    tick: result.tick,
+                    commands: result.commands.clone(),
+                    events: result.events.clone(),
+                    rejections: result.rejections.clone(),
+                    state_hash: result.state_hash,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FixtureError {
+    Json(String),
+    UnsupportedProtocol(u16),
+    RulesetMismatch(String),
+    InvalidDirection {
+        tick: u64,
+        player: u8,
+        value: String,
+    },
+    Protocol(ProtocolError),
+}
+
+impl fmt::Display for FixtureError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "fixture error: {self:?}")
+    }
+}
+
+impl std::error::Error for FixtureError {}
+
+fn parse_direction(value: &str) -> Option<Direction> {
+    if value.eq_ignore_ascii_case("none") {
+        Some(Direction::None)
+    } else if value.eq_ignore_ascii_case("up") {
+        Some(Direction::Up)
+    } else if value.eq_ignore_ascii_case("right") {
+        Some(Direction::Right)
+    } else if value.eq_ignore_ascii_case("down") {
+        Some(Direction::Down)
+    } else if value.eq_ignore_ascii_case("left") {
+        Some(Direction::Left)
+    } else {
+        None
+    }
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Intent {
     Move { actor: u8, direction: Direction },
     PlaceBomb { actor: u8 },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AuthoritativeCommand {
     Move {
         actor: u8,
@@ -171,7 +542,7 @@ pub enum AuthoritativeCommand {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PresentationEvent {
     BombPlaced { bomb: u32, cell: Cell },
     BombExploded { bomb: u32, cell: Cell },
@@ -179,7 +550,7 @@ pub enum PresentationEvent {
     PlayerDefeated { actor: u8, cell: Cell },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RejectionReason {
     UnknownPlayer,
     PlayerDefeated,
@@ -188,7 +559,7 @@ pub enum RejectionReason {
     BombLimit,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rejection {
     pub actor: u8,
     pub intent: Intent,
@@ -336,14 +707,14 @@ impl InterpreterPipe for RustGameplayInterpreter {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PlayerState {
     pub actor: u8,
     pub cell: Cell,
     pub alive: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BombState {
     pub id: u32,
     pub cell: Cell,
@@ -351,48 +722,31 @@ pub struct BombState {
     pub fuse_ticks: u16,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GameState {
     pub tick: u64,
     pub players: Vec<PlayerState>,
     pub bombs: Vec<BombState>,
+    pub indestructible_walls: Vec<Cell>,
     pub destructible_walls: Vec<Cell>,
     pub next_bomb_id: u32,
 }
 
 impl GameState {
     pub fn initial() -> Self {
-        Self {
+        Self::from_map(&default_map_document()).expect("default map must validate")
+    }
+
+    pub fn from_map(document: &ArenaMapDocument) -> Result<Self, MapError> {
+        let map = document.validate()?;
+        Ok(Self {
             tick: 0,
-            players: vec![
-                PlayerState {
-                    actor: 1,
-                    cell: Cell::new(1, 1),
-                    alive: true,
-                },
-                PlayerState {
-                    actor: 2,
-                    cell: Cell::new(11, 9),
-                    alive: true,
-                },
-            ],
+            players: map.players,
             bombs: Vec::new(),
-            destructible_walls: vec![
-                Cell::new(3, 3),
-                Cell::new(5, 3),
-                Cell::new(7, 3),
-                Cell::new(9, 3),
-                Cell::new(3, 5),
-                Cell::new(5, 5),
-                Cell::new(7, 5),
-                Cell::new(9, 5),
-                Cell::new(3, 7),
-                Cell::new(5, 7),
-                Cell::new(7, 7),
-                Cell::new(9, 7),
-            ],
+            indestructible_walls: map.indestructible_walls,
+            destructible_walls: map.destructible_walls,
             next_bomb_id: 1,
-        }
+        })
     }
 
     pub fn hash(&self) -> StateHash {
@@ -420,6 +774,10 @@ impl GameState {
             bytes.push(bomb.owner);
             bytes.extend_from_slice(&bomb.fuse_ticks.to_le_bytes());
         }
+        bytes.push(self.indestructible_walls.len() as u8);
+        for wall in &self.indestructible_walls {
+            wall.encode(&mut bytes);
+        }
         bytes.push(self.destructible_walls.len() as u8);
         for wall in &self.destructible_walls {
             wall.encode(&mut bytes);
@@ -440,6 +798,10 @@ impl GameState {
         cell.x == 0 || cell.y == 0 || cell.x + 1 == ARENA_WIDTH || cell.y + 1 == ARENA_HEIGHT
     }
 
+    fn has_indestructible_wall(&self, cell: Cell) -> bool {
+        self.indestructible_walls.contains(&cell)
+    }
+
     fn has_wall(&self, cell: Cell) -> bool {
         self.destructible_walls.contains(&cell)
     }
@@ -449,7 +811,10 @@ impl GameState {
     }
 
     fn blocked(&self, cell: Cell) -> bool {
-        Self::is_border(cell) || self.has_wall(cell) || self.has_bomb(cell)
+        Self::is_border(cell)
+            || self.has_indestructible_wall(cell)
+            || self.has_wall(cell)
+            || self.has_bomb(cell)
     }
 
     fn target(cell: Cell, direction: Direction) -> Option<Cell> {
@@ -592,7 +957,7 @@ impl GameState {
                     break;
                 }
                 cells.push(next);
-                if self.has_wall(next) {
+                if self.has_indestructible_wall(next) || self.has_wall(next) {
                     break;
                 }
                 current = next;
@@ -652,7 +1017,7 @@ impl fmt::Display for SimulationError {
 
 impl std::error::Error for SimulationError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TickResult {
     pub tick: u64,
     pub commands: Vec<AuthoritativeCommand>,
@@ -696,6 +1061,13 @@ impl Simulation {
             state: GameState::initial(),
             interpreter: RustGameplayInterpreter,
         }
+    }
+
+    pub fn from_map(document: &ArenaMapDocument) -> Result<Self, MapError> {
+        Ok(Self {
+            state: GameState::from_map(document)?,
+            interpreter: RustGameplayInterpreter,
+        })
     }
 
     pub fn step(&mut self, input: &TickInputFrame) -> Result<TickResult, SimulationError> {
@@ -993,6 +1365,36 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stage1_map_fixture_loads_into_authoritative_state() {
+        let document = ArenaMapDocument::load_json(include_str!(
+            "../../../demo/pipe_arena/assets/maps/stage1.json"
+        ))
+        .expect("map JSON parses");
+        let map = document.validate().expect("map validates");
+        assert_eq!(map.players.len(), 2);
+        assert_eq!(map.indestructible_walls.len(), 20);
+        assert_eq!(map.destructible_walls.len(), 12);
+        let simulation = Simulation::from_map(&document).expect("simulation loads map");
+        assert_eq!(simulation.state.players, map.players);
+    }
+
+    #[test]
+    fn map_loader_rejects_unknown_fields() {
+        let error = ArenaMapDocument::load_json(
+            r#"{
+                "schema_version": 1,
+                "ruleset_id": "pipe_arena_stage1",
+                "width": 13,
+                "height": 11,
+                "spawns": [{"actor": 1, "x": 1, "y": 1}],
+                "unexpected": true
+            }"#,
+        )
+        .expect_err("unknown map field must be rejected");
+        assert!(matches!(error, MapError::Json(_)));
+    }
 
     #[test]
     fn input_frame_encoding_is_canonical() {
