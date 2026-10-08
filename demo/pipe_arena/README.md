@@ -19,6 +19,7 @@ Stage 1 includes the deterministic simulation, JSON map/input/output fixtures, f
 
 pipe_arena/
 ├── assets/              source art, audio, fonts, maps, and effects
+├── config/              versioned client controls, colors, keys, and positions
 ├── docs/                demo-specific design and production notes
 ├── engine/
 │   ├── bevy/            Bevy presentation client
@@ -64,4 +65,4 @@ The Bevy client consumes authoritative state and presentation events; it does no
 - Do not pass engine object pointers through the simulation protocol.
 - Put attribution and license information beside third-party assets.
 
-See `assets/README.md`, `protocol/README.md`, and `docs/test-scenarios.md` before adding files. Run the file-driven fixture with `cargo run -p bevy_pipe_core --example stage1`.
+See `assets/README.md`, `config/stage1.json`, `protocol/README.md`, and `docs/test-scenarios.md` before adding files. Run the file-driven fixture with `cargo run -p bevy_pipe_core --example stage1`.

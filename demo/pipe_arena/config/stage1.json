@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "movement_delay_ms": 180,
+  "help_hint": "F1 = ?",
+  "players": [
+    {
+      "actor": 1,
+      "initial_position": { "x": 1, "y": 1 },
+      "color": [38, 166, 242],
+      "keys": {
+        "up": "KeyW",
+        "right": "KeyD",
+        "down": "KeyS",
+        "left": "KeyA",
+        "bomb": "Space"
+      }
+    },
+    {
+      "actor": 2,
+      "initial_position": { "x": 11, "y": 9 },
+      "color": [242, 204, 38],
+      "keys": {
+        "up": "ArrowUp",
+        "right": "ArrowRight",
+        "down": "ArrowDown",
+        "left": "ArrowLeft",
+        "bomb": "Enter"
+      }
+    }
+  ]
+}

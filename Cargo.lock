@@ -3346,6 +3346,8 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_pipe_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
