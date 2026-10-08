@@ -46,3 +46,45 @@ engine input
 ```
 
 The protocol contains stable numeric IDs and engine-neutral values only. It must not contain engine object pointers, wall-clock time, packet-arrival order, or presentation-only object state.
+
+## Data format decisions
+
+The project uses different formats for authored data and authority-facing data:
+
+| Data | Format | Rule |
+| --- | --- | --- |
+| Arena maps and asset manifests | JSON | Cross-engine, versioned, validated before use |
+| Tick inputs and replay streams | Canonical binary | Fixed-width little-endian fields; no parser-dependent representation |
+| Authoritative state hashes | Canonical binary state bytes | Hash the normalized state, never raw JSON |
+| Rust-only tooling configuration | TOML | Not part of the simulation protocol |
+| Documentation and design notes | Markdown | Human-readable |
+| Presentation assets | Native asset formats | PNG, OGG, GLTF, and engine-imported derivatives |
+
+YAML MUST NOT be used for authoritative maps, rules, inputs, replays, or state. Its implicit typing, aliases, parser differences, and multiple equivalent representations make cross-language canonicalization needlessly fragile.
+
+### Authored JSON rules
+
+Authored JSON is input data, not authority. The loader MUST:
+
+1. validate `schema_version` and `ruleset_id`;
+2. validate dimensions, coordinates, IDs, limits, and duplicate cells;
+3. reject unsupported fields or incompatible versions;
+4. normalize ordering into typed Rust structures; and
+5. serialize the normalized structures using the canonical binary format before hashing or simulation.
+
+Authoritative JSON values MUST use integer coordinates, IDs, timers, and counts. Floating-point values are excluded from Stage 1 authoritative data.
+
+Example map metadata:
+
+```json
+{
+  "schema_version": 1,
+  "ruleset_id": "pipe_arena_stage1",
+  "width": 13,
+  "height": 11,
+  "spawns": [
+    { "actor": 1, "x": 1, "y": 1 },
+    { "actor": 2, "x": 11, "y": 9 }
+  ]
+}
+```

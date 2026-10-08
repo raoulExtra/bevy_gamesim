@@ -118,6 +118,12 @@ Ordering MUST NOT depend on hash-map iteration, packet arrival, thread completio
 
 The Stage 1 wire layout and hash inclusion list are specified in `demo/pipe_arena/protocol/README.md`.
 
+## Data format policy
+
+Human-authored maps and asset manifests use versioned JSON because they are consumed by multiple engine adapters. JSON is parsed into validated typed structures and normalized before it affects simulation. Raw JSON bytes are never authoritative and never hashed.
+
+Tick inputs, replay streams, and authoritative state use canonical binary formats with fixed-width little-endian fields. TOML is reserved for Rust-only tooling configuration. YAML is excluded from authoritative data because parser-specific typing and equivalent representations complicate cross-language determinism.
+
 ## State hashing
 
 A state hash is a diagnostic and authority tool. It should cover all gameplay state that affects future simulation and exclude presentation-only state.
