@@ -1047,6 +1047,7 @@ impl<'a> WorldView<'a> {
 pub struct Simulation {
     pub state: GameState,
     interpreter: RustGameplayInterpreter,
+    bomb_fuse_ticks: u16,
 }
 
 impl Default for Simulation {
@@ -1057,16 +1058,31 @@ impl Default for Simulation {
 
 impl Simulation {
     pub fn new() -> Self {
+        Self::new_with_bomb_fuse_ticks(BOMB_FUSE_TICKS)
+    }
+
+    pub fn new_with_bomb_fuse_ticks(bomb_fuse_ticks: u16) -> Self {
+        assert!(bomb_fuse_ticks > 0, "bomb fuse ticks must be positive");
         Self {
             state: GameState::initial(),
             interpreter: RustGameplayInterpreter,
+            bomb_fuse_ticks,
         }
     }
 
     pub fn from_map(document: &ArenaMapDocument) -> Result<Self, MapError> {
+        Self::from_map_with_bomb_fuse_ticks(document, BOMB_FUSE_TICKS)
+    }
+
+    pub fn from_map_with_bomb_fuse_ticks(
+        document: &ArenaMapDocument,
+        bomb_fuse_ticks: u16,
+    ) -> Result<Self, MapError> {
+        assert!(bomb_fuse_ticks > 0, "bomb fuse ticks must be positive");
         Ok(Self {
             state: GameState::from_map(document)?,
             interpreter: RustGameplayInterpreter,
+            bomb_fuse_ticks,
         })
     }
 
@@ -1175,7 +1191,7 @@ impl Simulation {
                     actor: *actor,
                     bomb: self.state.next_bomb_id,
                     cell: player.cell,
-                    fuse_ticks: BOMB_FUSE_TICKS,
+                    fuse_ticks: self.bomb_fuse_ticks,
                 })
             }
         }
@@ -1478,6 +1494,49 @@ mod tests {
             results
                 .iter()
                 .flat_map(|result| &result.events)
+                .any(|event| matches!(event, PresentationEvent::BombExploded { .. }))
+        );
+        assert!(simulation.state.bombs.is_empty());
+    }
+
+    #[test]
+    fn custom_bomb_fuse_ticks_delay_explosion() {
+        let fuse_ticks = 5;
+        let mut simulation = Simulation::new_with_bomb_fuse_ticks(fuse_ticks);
+        let results = (0..fuse_ticks)
+            .map(|tick| {
+                simulation
+                    .step(
+                        &TickInputFrame::new(
+                            u64::from(tick),
+                            vec![PlayerInput {
+                                player: 1,
+                                direction: Direction::None,
+                                place_bomb: tick == 0,
+                            }],
+                        )
+                        .expect("valid input"),
+                    )
+                    .expect("step succeeds")
+            })
+            .collect::<Vec<_>>();
+
+        assert!(matches!(
+            results[0].commands.first(),
+            Some(AuthoritativeCommand::PlaceBomb { fuse_ticks: 5, .. })
+        ));
+        assert!(
+            results[..fuse_ticks as usize - 1]
+                .iter()
+                .flat_map(|result| &result.events)
+                .all(|event| !matches!(event, PresentationEvent::BombExploded { .. }))
+        );
+        assert!(
+            results
+                .last()
+                .expect("fuse has a final tick")
+                .events
+                .iter()
                 .any(|event| matches!(event, PresentationEvent::BombExploded { .. }))
         );
         assert!(simulation.state.bombs.is_empty());

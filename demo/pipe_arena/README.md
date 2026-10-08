@@ -19,7 +19,7 @@ Stage 1 includes the deterministic simulation, JSON map/input/output fixtures, f
 
 pipe_arena/
 ├── assets/              source art, audio, fonts, maps, and effects
-├── config/              versioned client controls, colors, keys, and positions
+├── config/              versioned client controls, delays, colors, keys, positions, and win text
 ├── docs/                demo-specific design and production notes
 ├── engine/
 │   ├── bevy/            Bevy presentation client
@@ -39,14 +39,14 @@ Stage 1 implements:
 - two players;
 - fixed tick identity;
 - four-direction grid movement;
-- bomb placement;
-- fixed fuse and blast rules;
+- bomb placement and configurable explosion delay;
 - indestructible and destructible walls;
 - player elimination;
+- lower-left winner and round-score status;
 - deterministic hashes and replay verification; and
 - a Bevy client that renders authoritative state and logs presentation events.
 
-Later stages add persistent replay files, rollback, score/round rules, power-ups, network correction, and additional engine adapters.
+Later stages add persistent replay files, rollback, persistent score/round rules, power-ups, network correction, and additional engine adapters.
 
 ## Authority split
 

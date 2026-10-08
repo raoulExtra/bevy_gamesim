@@ -11,6 +11,7 @@ const CELL_SIZE: f32 = 56.0;
 const CONFIG_JSON: &str = include_str!("../../../config/stage1.json");
 const MAP_JSON: &str = include_str!("../../../assets/maps/stage1.json");
 const CONFIG_SCHEMA_VERSION: u16 = 1;
+const FIXED_TICK_HZ: u64 = 64;
 
 #[derive(Resource)]
 struct ArenaRuntime {
@@ -20,7 +21,10 @@ struct ArenaRuntime {
 #[derive(Resource)]
 struct PresentationConfig {
     movement_delay: Duration,
+    bomb_explosion_delay: Duration,
+    bomb_fuse_ticks: u16,
     help_hint: String,
+    win_format: String,
     players: Vec<ConfiguredPlayer>,
 }
 
@@ -49,7 +53,9 @@ struct KeyBinding {
 struct PresentationConfigFile {
     schema_version: u16,
     movement_delay_ms: u64,
+    bomb_explosion_delay_ms: u64,
     help_hint: String,
+    win_format: String,
     players: Vec<PresentationPlayerFile>,
 }
 
@@ -82,8 +88,23 @@ impl PresentationConfig {
         if file.movement_delay_ms == 0 {
             return Err("movement_delay_ms must be positive".into());
         }
+        if file.bomb_explosion_delay_ms == 0 {
+            return Err("bomb_explosion_delay_ms must be positive".into());
+        }
+        let bomb_fuse_ticks = u16::try_from(
+            (u128::from(file.bomb_explosion_delay_ms) * u128::from(FIXED_TICK_HZ)).div_ceil(1_000),
+        )
+        .map_err(|_| "bomb_explosion_delay_ms is too large".to_owned())?;
         if file.help_hint.trim().is_empty() {
             return Err("help_hint must not be empty".into());
+        }
+        if file.win_format.trim().is_empty() {
+            return Err("win_format must not be empty".into());
+        }
+        for placeholder in ["{score1}", "{score2}"] {
+            if !file.win_format.contains(placeholder) {
+                return Err(format!("win_format must contain {placeholder}"));
+            }
         }
 
         let mut players = Vec::with_capacity(file.players.len());
@@ -109,7 +130,10 @@ impl PresentationConfig {
 
         Ok(Self {
             movement_delay: Duration::from_millis(file.movement_delay_ms),
+            bomb_explosion_delay: Duration::from_millis(file.bomb_explosion_delay_ms),
+            bomb_fuse_ticks,
             help_hint: file.help_hint,
+            win_format: file.win_format,
             players,
         })
     }
@@ -119,6 +143,14 @@ impl PresentationConfig {
             .iter()
             .find(|player| player.actor == actor)
             .expect("validated presentation config actor must exist")
+    }
+
+    fn win_text(&self, winner: u8) -> String {
+        let score1 = if winner == 1 { "1" } else { "0" };
+        let score2 = if winner == 2 { "1" } else { "0" };
+        self.win_format
+            .replace("{score1}", score1)
+            .replace("{score2}", score2)
     }
 
     fn apply_initial_positions(&self, map: &mut ArenaMapDocument) -> Result<(), String> {
@@ -211,6 +243,11 @@ struct DestructibleWallView {
 #[derive(Component)]
 struct HelpPanel;
 
+#[derive(Component)]
+struct StatusText {
+    winner: Option<u8>,
+}
+
 fn main() {
     let mut map = ArenaMapDocument::load_json(MAP_JSON).expect("stage1 map JSON must parse");
     let config =
@@ -218,7 +255,8 @@ fn main() {
     config
         .apply_initial_positions(&mut map)
         .expect("presentation positions must match map actors");
-    let simulation = Simulation::from_map(&map).expect("stage1 map must validate");
+    let simulation = Simulation::from_map_with_bomb_fuse_ticks(&map, config.bomb_fuse_ticks)
+        .expect("stage1 map must validate");
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -229,12 +267,22 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(Time::<Fixed>::from_hz(FIXED_TICK_HZ as f64))
         .insert_resource(ArenaRuntime { simulation })
         .insert_resource(KeyboardInputState::new(config.movement_delay))
         .insert_resource(config)
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, step_simulation)
-        .add_systems(Update, (toggle_help, sync_players, sync_walls, sync_bombs))
+        .add_systems(
+            Update,
+            (
+                toggle_help,
+                sync_status_text,
+                sync_players,
+                sync_walls,
+                sync_bombs,
+            ),
+        )
         .run();
 }
 
@@ -295,6 +343,7 @@ fn setup(mut commands: Commands, runtime: Res<ArenaRuntime>, config: Res<Present
 
 fn setup_help_ui(commands: &mut Commands, config: &PresentationConfig) {
     commands.spawn((
+        StatusText { winner: None },
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(14.0),
@@ -319,6 +368,7 @@ fn setup_help_ui(commands: &mut Commands, config: &PresentationConfig) {
          Player 2: {} / {} / {} / {}  Move\n\
          Player 2: {}                Place bomb\n\n\
          Movement repeats every {} ms.\n\
+         Bombs explode after {} ms.\n\
          Bomb blasts destroy brown walls.",
         config.help_hint,
         player_one.keys.up.label,
@@ -332,6 +382,7 @@ fn setup_help_ui(commands: &mut Commands, config: &PresentationConfig) {
         player_two.keys.left.label,
         player_two.keys.bomb.label,
         config.movement_delay.as_millis(),
+        config.bomb_explosion_delay.as_millis(),
     );
 
     commands
@@ -371,6 +422,37 @@ fn toggle_help(keys: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Node, With
         } else {
             Display::None
         };
+    }
+}
+
+fn sync_status_text(
+    runtime: Res<ArenaRuntime>,
+    config: Res<PresentationConfig>,
+    mut query: Query<(&mut Text, &mut StatusText)>,
+) {
+    let mut alive_count = 0;
+    let mut last_alive_actor = None;
+    for player in &runtime.simulation.state.players {
+        if player.alive {
+            alive_count += 1;
+            last_alive_actor = Some(player.actor);
+        }
+    }
+    let winner = if alive_count == 1 {
+        last_alive_actor
+    } else {
+        None
+    };
+
+    for (mut text, mut status) in &mut query {
+        if status.winner == winner {
+            continue;
+        }
+        status.winner = winner;
+        text.0 = winner.map_or_else(
+            || config.help_hint.clone(),
+            |winner| config.win_text(winner),
+        );
     }
 }
 
