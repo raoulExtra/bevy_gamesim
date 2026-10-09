@@ -1,0 +1,62 @@
+{
+  "protocol_version": 1,
+  "ruleset_id": "bomberman_stage1",
+  "frames": [
+    {
+      "tick": 0,
+      "players": [
+        { "player": 1, "direction": "right", "place_bomb": false },
+        { "player": 2, "direction": "left", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 1,
+      "players": [
+        { "player": 1, "direction": "right", "place_bomb": false },
+        { "player": 2, "direction": "left", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 2,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": true },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 3,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": false },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 4,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": false },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 5,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": false },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 6,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": false },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    },
+    {
+      "tick": 7,
+      "players": [
+        { "player": 1, "direction": "none", "place_bomb": false },
+        { "player": 2, "direction": "none", "place_bomb": false }
+      ]
+    }
+  ]
+}

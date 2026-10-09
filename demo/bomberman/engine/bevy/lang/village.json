@@ -1,0 +1,234 @@
+{
+  "schema_version": 2,
+  "ruleset_id": "village_traffic_stage1",
+  "world": {
+    "width_m": 1000,
+    "height_m": 1000,
+    "origin": "center",
+    "street_rendering": "lines",
+    "curve_types": ["straight", "gentle_arc", "s_bend", "hairpin"],
+    "street_generation": {
+      "seed": 305419896,
+      "candidate_count": 133,
+      "width_m": 4,
+      "min_length_m": 40,
+      "require_connections": true,
+      "max_length_m": 180,
+      "density_bands": [
+        { "radius_m": 120, "probability_percent": 95 },
+        { "radius_m": 260, "probability_percent": 70 },
+        { "radius_m": 420, "probability_percent": 40 },
+        { "radius_m": 700, "probability_percent": 15 }
+      ]
+    },
+    "streets": [
+      {
+        "role": "outgoing",
+        "id": "north_exit",
+        "direction": "north",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "straight",
+          "end": { "x_m": 500, "y_m": 0 }
+        }
+      },
+      {
+        "role": "outgoing",
+        "id": "north_east_exit",
+        "direction": "north_east",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "gentle_arc",
+          "end": { "x_m": 1000, "y_m": 0 }
+        }
+      },
+      {
+        "role": "outgoing",
+        "id": "east_exit",
+        "direction": "east",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "s_bend",
+          "end": { "x_m": 1000, "y_m": 500 }
+        }
+      },
+      {
+        "role": "outgoing",
+        "id": "south_exit",
+        "direction": "south",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "straight",
+          "end": { "x_m": 500, "y_m": 1000 }
+        }
+      },
+      {
+        "role": "outgoing",
+        "id": "south_west_exit",
+        "direction": "south_west",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "hairpin",
+          "end": { "x_m": 0, "y_m": 1000 }
+        }
+      },
+      {
+        "role": "outgoing",
+        "id": "west_exit",
+        "direction": "west",
+        "width_m": 6,
+        "path": {
+          "start": { "x_m": 500, "y_m": 500 },
+          "curve": "gentle_arc",
+          "end": { "x_m": 0, "y_m": 500 }
+        }
+      }
+    ]
+  },
+  "traffic": {
+    "intersections": [
+      {
+        "id": "village_center",
+        "position": { "x_m": 500, "y_m": 500 },
+        "incoming_streets": [
+          "north_exit",
+          "north_east_exit",
+          "east_exit",
+          "south_exit",
+          "south_west_exit",
+          "west_exit"
+        ],
+        "traffic_lights": [
+          {
+            "id": "center_light",
+            "red": {
+              "stops": ["car", "bicycle", "motorcycle", "moped", "escooter"],
+              "gives_way_to": ["pedestrian"],
+              "permits": []
+            },
+            "green": {
+              "stops": [],
+              "gives_way_to": ["pedestrian"],
+              "permits": ["car", "bicycle", "motorcycle", "moped", "escooter"]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "agents": [
+    {
+      "kind": "car",
+      "emoji": "🚗",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "car",
+      "emoji": "🚗",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "bicycle",
+      "emoji": "🚲",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "bicycle",
+      "emoji": "🚲",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "motorcycle",
+      "emoji": "🏍️",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "motorcycle",
+      "emoji": "🏍️",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "moped",
+      "emoji": "🛵",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "moped",
+      "emoji": "🛵",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "escooter",
+      "emoji": "🛴",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "escooter",
+      "emoji": "🛴",
+      "follows_streets": true,
+      "stops_at_red": "center_light",
+      "crosses_at": null,
+      "priority_over": []
+    },
+    {
+      "kind": "pedestrian",
+      "emoji": "🚶",
+      "follows_streets": true,
+      "stops_at_red": null,
+      "crosses_at": "center_light",
+      "priority_over": [
+        "car",
+        "bicycle",
+        "motorcycle",
+        "moped",
+        "escooter"
+      ]
+    },
+    {
+      "kind": "pedestrian",
+      "emoji": "🚶",
+      "follows_streets": true,
+      "stops_at_red": null,
+      "crosses_at": "center_light",
+      "priority_over": [
+        "car",
+        "bicycle",
+        "motorcycle",
+        "moped",
+        "escooter"
+      ]
+    }
+  ]
+}

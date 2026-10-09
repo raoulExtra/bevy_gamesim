@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/bevy_pipe_core", "demo/pipe_arena/engine/bevy"]
+members = ["ast", "crates/bevy_pipe_core", "demo/bomberman/engine/bevy", "demo/rail_dispatch/engine/bevy", "demo/fireworks/engine/bevy", "demo/village/engine/bevy", "demo/airtrain/engine/bevy"]
 
 [workspace.package]
 edition = "2024"

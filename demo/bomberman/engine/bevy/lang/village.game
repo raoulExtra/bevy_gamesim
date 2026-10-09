@@ -1,0 +1,142 @@
+// Village traffic sandbox design.
+// This source describes the intended village language surface; it is not yet
+// consumed by the Bomberman compiler.
+
+game village {
+  schema 2
+
+  world {
+    size 1000m by 1000m
+    origin center
+    street_rendering lines
+
+    streets {
+      outgoing 6
+      curve_types [straight, gentle_arc, s_bend, hairpin]
+
+      street north_exit {
+        direction north
+        width 6m
+        path {
+          start (500m, 500m)
+          curve straight to (500m, 0m)
+        }
+      }
+
+      street north_east_exit {
+        direction north_east
+        width 6m
+        path {
+          start (500m, 500m)
+          curve gentle_arc to (1000m, 0m)
+        }
+      }
+
+      street east_exit {
+        direction east
+        width 6m
+        path {
+          start (500m, 500m)
+          curve s_bend to (1000m, 500m)
+        }
+      }
+
+      street south_exit {
+        direction south
+        width 6m
+        path {
+          start (500m, 500m)
+          curve straight to (500m, 1000m)
+        }
+      }
+
+      street south_west_exit {
+        direction south_west
+        width 6m
+        path {
+          start (500m, 500m)
+          curve hairpin to (0m, 1000m)
+        }
+      }
+
+      street west_exit {
+        direction west
+        width 6m
+        path {
+          start (500m, 500m)
+          curve gentle_arc to (0m, 500m)
+        }
+      }
+      random_streets {
+        seed 305419896
+        candidates 133
+        width 4m
+        length 40m by 180m
+        require_connections true
+        density {
+          within 120m probability 95%
+          within 260m probability 70%
+          within 420m probability 40%
+          within 700m probability 15%
+        }
+      }
+
+    }
+  }
+
+  traffic {
+    intersection village_center at (500m, 500m) {
+      incoming [north_exit, north_east_exit, east_exit, south_exit, south_west_exit, west_exit]
+
+      traffic_light center_light {
+        red stops [cars, bicycles, motorcycles, mopeds, escooters]
+        red gives_way_to pedestrians
+        green permits [cars, bicycles, motorcycles, mopeds, escooters]
+        green gives_way_to pedestrians
+      }
+    }
+  }
+
+  agents {
+    count 12
+    placement random seed 305419896
+    car {
+      emoji "🚗"
+      follows streets
+      stops_at red center_light
+    }
+
+    bicycle {
+      emoji "🚲"
+      follows streets
+      stops_at red center_light
+    }
+
+    motorcycle {
+      emoji "🏍️"
+      follows streets
+      stops_at red center_light
+    }
+
+    moped {
+      emoji "🛵"
+      follows streets
+      stops_at red center_light
+    }
+
+    escooter {
+      emoji "🛴"
+      follows streets
+      stops_at red center_light
+    }
+
+    pedestrian {
+      emoji "🚶"
+      follows streets [outgoing, local]
+      route_selection random seed 305419896 per_agent distinct
+      route_preference local 80% outgoing 20%
+      crosses at center_light
+      priority over [cars, bicycles, motorcycles, mopeds, escooters]
+    }
+  }
+}

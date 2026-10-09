@@ -129,12 +129,17 @@ Pipe stages MUST NOT communicate through hidden global state.
 
 ## Stage 1 data contracts
 
-The first concrete implementation is in `crates/bevy_pipe_core`. It uses fixed-width integer fields and a canonical little-endian encoding for tick input and state hashing. The full protocol summary is in `demo/pipe_arena/protocol/README.md`.
+The first concrete implementation is in `crates/bevy_pipe_core`. It uses fixed-width integer fields and a canonical little-endian encoding for tick input and state hashing. The full protocol summary is in `demo/bomberman/protocol/README.md`.
 
 ```rust
 pub struct TickInputFrame {
-    pub tick: u64,
-    pub players: Vec<PlayerInput>, // canonicalized by ascending player ID
+    // Private fields. Construct with `TickInputFrame::new`, or validate
+    // decoded data at the simulation boundary.
+}
+
+impl TickInputFrame {
+    pub fn tick(&self) -> u64;
+    pub fn players(&self) -> &[PlayerInput];
 }
 
 pub struct WorldView<'a> {

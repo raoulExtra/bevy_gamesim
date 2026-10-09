@@ -107,7 +107,7 @@ Ordering MUST NOT depend on hash-map iteration, packet arrival, thread completio
 
 `bevy_pipe_core` makes the following decisions:
 
-- `PROTOCOL_VERSION = 1` and ruleset ID `pipe_arena_stage1`;
+- `PROTOCOL_VERSION = 1` and ruleset ID `bomberman_stage1`;
 - player IDs, bomb IDs, cells, ticks, fuses, and counts use fixed-width integers;
 - input players are sorted by ascending player ID;
 - commands are applied in intent order, followed by generated fuse and blast commands in deterministic traversal order;
@@ -116,11 +116,13 @@ Ordering MUST NOT depend on hash-map iteration, packet arrival, thread completio
 - input, intent, command, event, and rejection buffers are bounded; and
 - the state hash is FNV-1a 64 over canonical little-endian state bytes, including both indestructible and destructible wall state.
 
-The Stage 1 wire layout and hash inclusion list are specified in `demo/pipe_arena/protocol/README.md`.
+The Stage 1 wire layout and hash inclusion list are specified in `demo/bomberman/protocol/README.md`.
 
 ## Data format policy
 
-Human-authored maps and asset manifests use versioned JSON because they are consumed by multiple engine adapters. JSON is parsed into validated typed structures and normalized before it affects simulation. Raw JSON bytes are never authoritative and never hashed.
+Human-authored gameplay descriptions, maps, and asset manifests use versioned JSON because they are consumed by multiple engine adapters. JSON is parsed by `bevy_gamesim_ast` into validated, normalized typed structures during the consumer build. Bomberman emits one generated `BOMBERMAN_DEFINITION`; raw JSON bytes are never authoritative and never hashed.
+
+The AST compiler requires `schema_version` and `ruleset_id`, rejects unknown fields, sorts order-insensitive collections, and computes a SHA-256 `definition_hash` from the normalized IR. This definition identity is separate from the per-state hash and is included in replay and fixture metadata. A schema or ruleset change that changes normalized gameplay data produces a new definition identity.
 
 The checked-in input fixture is also JSON for reviewability; the loader converts each frame to the canonical `TickInputFrame` binary representation before simulation. Tick inputs and replay streams use canonical binary formats with fixed-width little-endian fields. TOML is reserved for Rust-only tooling configuration. YAML is excluded from authoritative data because parser-specific typing and equivalent representations complicate cross-language determinism.
 

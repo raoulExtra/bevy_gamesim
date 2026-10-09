@@ -8,34 +8,28 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub const PROTOCOL_VERSION: u16 = 1;
-pub const MAP_SCHEMA_VERSION: u16 = 1;
-pub const RULESET_ID: &str = "pipe_arena_stage1";
-pub const ARENA_WIDTH: u8 = 13;
-pub const ARENA_HEIGHT: u8 = 11;
 pub const MAX_PLAYERS: usize = 4;
 pub const MAX_INTENTS: usize = 16;
-pub const MAX_COMMANDS: usize = 64;
-pub const MAX_EVENTS: usize = 64;
+pub const MAX_COMMANDS: usize = 512;
+pub const MAX_EVENTS: usize = 512;
 pub const MAX_REJECTIONS: usize = 32;
-pub const BOMB_FUSE_TICKS: u16 = 3;
-pub const BOMB_RADIUS: u8 = 2;
 
 pub type StateHash = u64;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Cell {
-    pub x: u8,
-    pub y: u8,
+    pub x: u16,
+    pub y: u16,
 }
 
 impl Cell {
-    pub const fn new(x: u8, y: u8) -> Self {
+    pub const fn new(x: u16, y: u16) -> Self {
         Self { x, y }
     }
 
     fn encode(self, bytes: &mut Vec<u8>) {
-        bytes.push(self.x);
-        bytes.push(self.y);
+        bytes.extend_from_slice(&self.x.to_le_bytes());
+        bytes.extend_from_slice(&self.y.to_le_bytes());
     }
 }
 
@@ -80,9 +74,10 @@ pub struct PlayerInput {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TickInputFrame {
-    pub tick: u64,
-    pub players: Vec<PlayerInput>,
+    tick: u64,
+    players: Vec<PlayerInput>,
 }
 
 impl TickInputFrame {
@@ -91,12 +86,32 @@ impl TickInputFrame {
             return Err(ProtocolError::TooManyPlayers(players.len()));
         }
         players.sort_by_key(|input| input.player);
-        for pair in players.windows(2) {
+        let frame = Self { tick, players };
+        frame.validate()?;
+        Ok(frame)
+    }
+
+    pub fn tick(&self) -> u64 {
+        self.tick
+    }
+
+    pub fn players(&self) -> &[PlayerInput] {
+        &self.players
+    }
+
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.players.len() > MAX_PLAYERS {
+            return Err(ProtocolError::TooManyPlayers(self.players.len()));
+        }
+        for pair in self.players.windows(2) {
             if pair[0].player == pair[1].player {
                 return Err(ProtocolError::DuplicatePlayer(pair[0].player));
             }
+            if pair[0].player > pair[1].player {
+                return Err(ProtocolError::UnsortedPlayers);
+            }
         }
-        Ok(Self { tick, players })
+        Ok(())
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -145,8 +160,8 @@ impl TickInputFrame {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapCell {
-    pub x: u8,
-    pub y: u8,
+    pub x: u16,
+    pub y: u16,
 }
 
 impl MapCell {
@@ -159,8 +174,8 @@ impl MapCell {
 #[serde(deny_unknown_fields)]
 pub struct MapSpawn {
     pub actor: u8,
-    pub x: u8,
-    pub y: u8,
+    pub x: u16,
+    pub y: u16,
 }
 
 impl MapSpawn {
@@ -170,12 +185,102 @@ impl MapSpawn {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RulesetConfig {
+    pub tick_hz: u16,
+    pub bomb_fuse_ticks: u16,
+    pub bomb_radius: u8,
+    pub max_bombs_per_player: u8,
+    pub random_bomb_batch_size: u16,
+    pub random_bomb_interval_ticks: u16,
+    pub random_bomb_seed: u64,
+}
+
+impl Default for RulesetConfig {
+    fn default() -> Self {
+        let rules = &BOMBERMAN_DEFINITION.rules;
+        Self {
+            tick_hz: rules.tick_hz,
+            bomb_fuse_ticks: rules.bomb_fuse_ticks,
+            bomb_radius: rules.bomb_radius,
+            max_bombs_per_player: rules.max_bombs_per_player,
+            random_bomb_batch_size: rules.random_bomb_batch_size,
+            random_bomb_interval_ticks: rules.random_bomb_interval_ticks,
+            random_bomb_seed: rules.random_bomb_seed,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlayerDescription {
+    pub actor: u8,
+    pub spawn: MapCell,
+}
+
+pub type DefinitionHash = [u8; 32];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BombermanDefinition {
+    pub schema_version: u16,
+    pub ruleset_id: &'static str,
+    pub definition_hash: DefinitionHash,
+    pub width: u16,
+    pub height: u16,
+    pub indestructible_walls: &'static [MapCell],
+    pub destructible_walls: &'static [MapCell],
+    pub rules: RulesetConfig,
+    pub players: &'static [PlayerDescription],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledBomberman {
+    pub map: ArenaMapDocument,
+    pub rules: RulesetConfig,
+    pub players: Vec<PlayerDescription>,
+    pub definition_hash: DefinitionHash,
+}
+
+impl BombermanDefinition {
+    pub fn compile(&self) -> Result<CompiledBomberman, MapError> {
+        let map = ArenaMapDocument {
+            schema_version: self.schema_version,
+            ruleset_id: self.ruleset_id.to_owned(),
+            width: self.width,
+            height: self.height,
+            indestructible_walls: self.indestructible_walls.to_vec(),
+            destructible_walls: self.destructible_walls.to_vec(),
+            spawns: self
+                .players
+                .iter()
+                .map(|player| MapSpawn {
+                    actor: player.actor,
+                    x: player.spawn.x,
+                    y: player.spawn.y,
+                })
+                .collect(),
+        };
+        map.validate()?;
+        Ok(CompiledBomberman {
+            map,
+            rules: self.rules.clone(),
+            players: self.players.to_vec(),
+            definition_hash: self.definition_hash,
+        })
+    }
+}
+
+include!(concat!(env!("OUT_DIR"), "/bomberman_definition.rs"));
+pub const MAP_SCHEMA_VERSION: u16 = BOMBERMAN_SCHEMA_VERSION;
+pub const RULESET_ID: &str = BOMBERMAN_RULESET_ID;
+pub const ARENA_WIDTH: u16 = BOMBERMAN_WIDTH;
+pub const ARENA_HEIGHT: u16 = BOMBERMAN_HEIGHT;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArenaMapDocument {
     pub schema_version: u16,
     pub ruleset_id: String,
-    pub width: u8,
-    pub height: u8,
+    pub width: u16,
+    pub height: u16,
     #[serde(default)]
     pub indestructible_walls: Vec<MapCell>,
     #[serde(default)]
@@ -282,7 +387,7 @@ pub enum MapError {
     Json(String),
     UnsupportedSchema(u16),
     RulesetMismatch(String),
-    InvalidDimensions { width: u8, height: u8 },
+    InvalidDimensions { width: u16, height: u16 },
     TooManyPlayers(usize),
     NoPlayers,
     InvalidActor(u8),
@@ -328,46 +433,10 @@ fn is_border(cell: Cell) -> bool {
 }
 
 pub fn default_map_document() -> ArenaMapDocument {
-    ArenaMapDocument {
-        schema_version: MAP_SCHEMA_VERSION,
-        ruleset_id: RULESET_ID.to_owned(),
-        width: ARENA_WIDTH,
-        height: ARENA_HEIGHT,
-        indestructible_walls: (2..ARENA_WIDTH - 1)
-            .step_by(2)
-            .flat_map(|x| {
-                (2..ARENA_HEIGHT - 1)
-                    .step_by(2)
-                    .map(move |y| MapCell { x, y })
-            })
-            .collect(),
-        destructible_walls: vec![
-            MapCell { x: 3, y: 3 },
-            MapCell { x: 5, y: 3 },
-            MapCell { x: 7, y: 3 },
-            MapCell { x: 9, y: 3 },
-            MapCell { x: 3, y: 5 },
-            MapCell { x: 5, y: 5 },
-            MapCell { x: 7, y: 5 },
-            MapCell { x: 9, y: 5 },
-            MapCell { x: 3, y: 7 },
-            MapCell { x: 5, y: 7 },
-            MapCell { x: 7, y: 7 },
-            MapCell { x: 9, y: 7 },
-        ],
-        spawns: vec![
-            MapSpawn {
-                actor: 1,
-                x: 1,
-                y: 1,
-            },
-            MapSpawn {
-                actor: 2,
-                x: 11,
-                y: 9,
-            },
-        ],
-    }
+    BOMBERMAN_DEFINITION
+        .compile()
+        .expect("generated Bomberman definition must validate")
+        .map
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -437,6 +506,7 @@ impl InputFixtureDocument {
 pub struct ExpectedRunDocument {
     pub protocol_version: u16,
     pub ruleset_id: String,
+    pub definition_hash: DefinitionHash,
     pub initial_state_hash: StateHash,
     pub ticks: Vec<ExpectedTickDocument>,
 }
@@ -456,10 +526,15 @@ impl ExpectedRunDocument {
         serde_json::from_str(json).map_err(|error| FixtureError::Json(error.to_string()))
     }
 
-    pub fn from_results(initial_state_hash: StateHash, results: &[TickResult]) -> Self {
+    pub fn from_results(
+        definition_hash: DefinitionHash,
+        initial_state_hash: StateHash,
+        results: &[TickResult],
+    ) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
             ruleset_id: RULESET_ID.to_owned(),
+            definition_hash,
             initial_state_hash,
             ticks: results
                 .iter()
@@ -545,6 +620,7 @@ pub enum AuthoritativeCommand {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PresentationEvent {
     BombPlaced { bomb: u32, cell: Cell },
+    RandomBombBatchPlaced { count: u16 },
     BombExploded { bomb: u32, cell: Cell },
     WallDestroyed { cell: Cell },
     PlayerDefeated { actor: u8, cell: Cell },
@@ -573,6 +649,7 @@ pub enum ProtocolError {
     UnsupportedVersion(u16),
     TooManyPlayers(usize),
     DuplicatePlayer(u8),
+    UnsortedPlayers,
     UnexpectedEnd,
     TrailingBytes(usize),
 }
@@ -587,6 +664,7 @@ impl fmt::Display for ProtocolError {
             }
             Self::TooManyPlayers(count) => write!(formatter, "too many players: {count}"),
             Self::DuplicatePlayer(player) => write!(formatter, "duplicate player {player}"),
+            Self::UnsortedPlayers => formatter.write_str("players are not in canonical order"),
             Self::UnexpectedEnd => formatter.write_str("unexpected end of protocol data"),
             Self::TrailingBytes(count) => write!(formatter, "trailing protocol bytes: {count}"),
         }
@@ -683,7 +761,7 @@ impl InterpreterPipe for RustGameplayInterpreter {
         input: &InterpreterInput<'_>,
         output: &mut BoundedBuffer<Intent>,
     ) -> Result<(), Self::Fault> {
-        for player in &input.frame.players {
+        for player in input.frame.players() {
             if input
                 .view
                 .player(player.player)
@@ -725,11 +803,13 @@ pub struct BombState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GameState {
     pub tick: u64,
+    pub rules: RulesetConfig,
     pub players: Vec<PlayerState>,
     pub bombs: Vec<BombState>,
     pub indestructible_walls: Vec<Cell>,
     pub destructible_walls: Vec<Cell>,
     pub next_bomb_id: u32,
+    pub random_bomb_state: u64,
 }
 
 impl GameState {
@@ -738,14 +818,24 @@ impl GameState {
     }
 
     pub fn from_map(document: &ArenaMapDocument) -> Result<Self, MapError> {
+        Self::from_map_with_rules(document, RulesetConfig::default())
+    }
+
+    pub fn from_map_with_rules(
+        document: &ArenaMapDocument,
+        rules: RulesetConfig,
+    ) -> Result<Self, MapError> {
         let map = document.validate()?;
+        let random_bomb_state = rules.random_bomb_seed;
         Ok(Self {
             tick: 0,
+            rules,
             players: map.players,
             bombs: Vec::new(),
             indestructible_walls: map.indestructible_walls,
             destructible_walls: map.destructible_walls,
             next_bomb_id: 1,
+            random_bomb_state,
         })
     }
 
@@ -759,8 +849,15 @@ impl GameState {
         bytes.extend_from_slice(&(RULESET_ID.len() as u16).to_le_bytes());
         bytes.extend_from_slice(RULESET_ID.as_bytes());
         bytes.extend_from_slice(&self.tick.to_le_bytes());
-        bytes.push(ARENA_WIDTH);
-        bytes.push(ARENA_HEIGHT);
+        bytes.extend_from_slice(&ARENA_WIDTH.to_le_bytes());
+        bytes.extend_from_slice(&ARENA_HEIGHT.to_le_bytes());
+        bytes.extend_from_slice(&self.rules.tick_hz.to_le_bytes());
+        bytes.extend_from_slice(&self.rules.bomb_fuse_ticks.to_le_bytes());
+        bytes.push(self.rules.bomb_radius);
+        bytes.push(self.rules.max_bombs_per_player);
+        bytes.extend_from_slice(&self.rules.random_bomb_batch_size.to_le_bytes());
+        bytes.extend_from_slice(&self.rules.random_bomb_interval_ticks.to_le_bytes());
+        bytes.extend_from_slice(&self.rules.random_bomb_seed.to_le_bytes());
         bytes.push(self.players.len() as u8);
         for player in &self.players {
             bytes.push(player.actor);
@@ -783,6 +880,7 @@ impl GameState {
             wall.encode(&mut bytes);
         }
         bytes.extend_from_slice(&self.next_bomb_id.to_le_bytes());
+        bytes.extend_from_slice(&self.random_bomb_state.to_le_bytes());
         bytes
     }
 
@@ -794,7 +892,7 @@ impl GameState {
         self.players.iter_mut().find(|player| player.actor == actor)
     }
 
-    fn is_border(cell: Cell) -> bool {
+    fn is_border(&self, cell: Cell) -> bool {
         cell.x == 0 || cell.y == 0 || cell.x + 1 == ARENA_WIDTH || cell.y + 1 == ARENA_HEIGHT
     }
 
@@ -811,20 +909,20 @@ impl GameState {
     }
 
     fn blocked(&self, cell: Cell) -> bool {
-        Self::is_border(cell)
+        self.is_border(cell)
             || self.has_indestructible_wall(cell)
             || self.has_wall(cell)
             || self.has_bomb(cell)
     }
 
-    fn target(cell: Cell, direction: Direction) -> Option<Cell> {
+    fn target(&self, cell: Cell, direction: Direction) -> Option<Cell> {
         let (dx, dy) = direction.delta();
-        let x = i16::from(cell.x) + i16::from(dx);
-        let y = i16::from(cell.y) + i16::from(dy);
-        if x < 0 || y < 0 || x >= i16::from(ARENA_WIDTH) || y >= i16::from(ARENA_HEIGHT) {
+        let x = i32::from(cell.x) + i32::from(dx);
+        let y = i32::from(cell.y) + i32::from(dy);
+        if x < 0 || y < 0 || x >= i32::from(ARENA_WIDTH) || y >= i32::from(ARENA_HEIGHT) {
             None
         } else {
-            Some(Cell::new(x as u8, y as u8))
+            Some(Cell::new(x as u16, y as u16))
         }
     }
 
@@ -859,7 +957,13 @@ impl GameState {
                 if !player.alive || player.cell != *cell || self.has_bomb(*cell) {
                     return Err(CommandError::InvalidBombPlacement(*actor));
                 }
-                if self.bombs.iter().any(|existing| existing.owner == *actor) {
+                if self
+                    .bombs
+                    .iter()
+                    .filter(|existing| existing.owner == *actor)
+                    .count()
+                    >= usize::from(self.rules.max_bombs_per_player)
+                {
                     return Err(CommandError::BombLimit(*actor));
                 }
                 if *bomb != self.next_bomb_id {
@@ -940,7 +1044,7 @@ impl GameState {
         }
     }
 
-    fn blast_cells(&self, origin: Cell) -> Vec<Cell> {
+    pub fn blast_cells(&self, origin: Cell) -> Vec<Cell> {
         let mut cells = vec![origin];
         for direction in [
             Direction::Up,
@@ -949,11 +1053,11 @@ impl GameState {
             Direction::Left,
         ] {
             let mut current = origin;
-            for _ in 0..BOMB_RADIUS {
-                let Some(next) = Self::target(current, direction) else {
+            for _ in 0..self.rules.bomb_radius {
+                let Some(next) = self.target(current, direction) else {
                     break;
                 };
-                if Self::is_border(next) {
+                if self.is_border(next) {
                     break;
                 }
                 cells.push(next);
@@ -992,6 +1096,7 @@ pub enum SimulationError {
     Protocol(ProtocolError),
     TickMismatch { expected: u64, received: u64 },
     Pipe(BufferError),
+    Map(MapError),
     Command(CommandError),
     CommandLimit,
     RejectionLimit,
@@ -1002,12 +1107,10 @@ impl fmt::Display for SimulationError {
         match self {
             Self::Protocol(error) => error.fmt(formatter),
             Self::TickMismatch { expected, received } => {
-                write!(
-                    formatter,
-                    "expected tick {expected}, received tick {received}"
-                )
+                write!(formatter, "expected tick {expected}, received {received}")
             }
             Self::Pipe(error) => error.fmt(formatter),
+            Self::Map(error) => error.fmt(formatter),
             Self::Command(error) => error.fmt(formatter),
             Self::CommandLimit => formatter.write_str("authoritative command limit exceeded"),
             Self::RejectionLimit => formatter.write_str("rejection limit exceeded"),
@@ -1045,9 +1148,8 @@ impl<'a> WorldView<'a> {
 }
 
 pub struct Simulation {
-    pub state: GameState,
+    state: GameState,
     interpreter: RustGameplayInterpreter,
-    bomb_fuse_ticks: u16,
 }
 
 impl Default for Simulation {
@@ -1058,20 +1160,22 @@ impl Default for Simulation {
 
 impl Simulation {
     pub fn new() -> Self {
-        Self::new_with_bomb_fuse_ticks(BOMB_FUSE_TICKS)
+        Self::new_with_bomb_fuse_ticks(RulesetConfig::default().bomb_fuse_ticks)
     }
 
     pub fn new_with_bomb_fuse_ticks(bomb_fuse_ticks: u16) -> Self {
         assert!(bomb_fuse_ticks > 0, "bomb fuse ticks must be positive");
+        let mut rules = RulesetConfig::default();
+        rules.bomb_fuse_ticks = bomb_fuse_ticks;
         Self {
-            state: GameState::initial(),
+            state: GameState::from_map_with_rules(&default_map_document(), rules)
+                .expect("default map must validate"),
             interpreter: RustGameplayInterpreter,
-            bomb_fuse_ticks,
         }
     }
 
     pub fn from_map(document: &ArenaMapDocument) -> Result<Self, MapError> {
-        Self::from_map_with_bomb_fuse_ticks(document, BOMB_FUSE_TICKS)
+        Self::from_map_with_rules(document, RulesetConfig::default())
     }
 
     pub fn from_map_with_bomb_fuse_ticks(
@@ -1079,20 +1183,84 @@ impl Simulation {
         bomb_fuse_ticks: u16,
     ) -> Result<Self, MapError> {
         assert!(bomb_fuse_ticks > 0, "bomb fuse ticks must be positive");
+        let mut rules = RulesetConfig::default();
+        rules.bomb_fuse_ticks = bomb_fuse_ticks;
+        Self::from_map_with_rules(document, rules)
+    }
+
+    pub fn from_map_with_rules(
+        document: &ArenaMapDocument,
+        rules: RulesetConfig,
+    ) -> Result<Self, MapError> {
         Ok(Self {
-            state: GameState::from_map(document)?,
+            state: GameState::from_map_with_rules(document, rules)?,
             interpreter: RustGameplayInterpreter,
-            bomb_fuse_ticks,
         })
     }
 
+    pub fn from_definition(definition: &BombermanDefinition) -> Result<Self, MapError> {
+        let compiled = definition.compile()?;
+        Self::from_map_with_rules(&compiled.map, compiled.rules)
+    }
+
+    pub fn state(&self) -> &GameState {
+        &self.state
+    }
+    fn place_random_bomb_batch(
+        &mut self,
+        events: &mut BoundedBuffer<PresentationEvent>,
+    ) -> Result<(), SimulationError> {
+        fn next_random(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            *state
+        }
+        let mut placed = 0;
+        let max_attempts = usize::from(ARENA_WIDTH) * usize::from(ARENA_HEIGHT) * 2;
+        for _ in 0..max_attempts {
+            if placed >= self.state.rules.random_bomb_batch_size {
+                break;
+            }
+            let x =
+                (next_random(&mut self.state.random_bomb_state) % u64::from(ARENA_WIDTH)) as u16;
+            let y =
+                (next_random(&mut self.state.random_bomb_state) % u64::from(ARENA_HEIGHT)) as u16;
+            let cell = Cell::new(x, y);
+            if self.state.is_border(cell)
+                || self.state.has_indestructible_wall(cell)
+                || self.state.has_wall(cell)
+                || self.state.bombs.iter().any(|bomb| bomb.cell == cell)
+                || self
+                    .state
+                    .players
+                    .iter()
+                    .any(|player| player.alive && player.cell == cell)
+            {
+                continue;
+            }
+            self.state.bombs.push(BombState {
+                id: self.state.next_bomb_id,
+                cell,
+                owner: 0,
+                fuse_ticks: self.state.rules.bomb_fuse_ticks,
+            });
+            self.state.next_bomb_id += 1;
+            placed += 1;
+        }
+        events
+            .push(PresentationEvent::RandomBombBatchPlaced { count: placed })
+            .map_err(SimulationError::Pipe)
+    }
+
     pub fn step(&mut self, input: &TickInputFrame) -> Result<TickResult, SimulationError> {
-        if input.tick != self.state.tick {
+        if input.tick() != self.state.tick {
             return Err(SimulationError::TickMismatch {
                 expected: self.state.tick,
-                received: input.tick,
+                received: input.tick(),
             });
         }
+        input.validate().map_err(SimulationError::Protocol)?;
 
         let mut intents = BoundedBuffer::new(MAX_INTENTS);
         let interpreter_input = InterpreterInput {
@@ -1125,7 +1293,9 @@ impl Simulation {
             };
             apply_and_record(&mut self.state, command, &mut commands, &mut events)?;
         }
-
+        if self.state.tick % u64::from(self.state.rules.random_bomb_interval_ticks) == 0 {
+            self.place_random_bomb_batch(&mut events)?;
+        }
         let expired_bombs = {
             for bomb in &mut self.state.bombs {
                 bomb.fuse_ticks = bomb.fuse_ticks.saturating_sub(1);
@@ -1164,7 +1334,7 @@ impl Simulation {
                 if !player.alive {
                     return Err(RejectionReason::PlayerDefeated);
                 }
-                let Some(to) = GameState::target(player.cell, *direction) else {
+                let Some(to) = self.state.target(player.cell, *direction) else {
                     return Err(RejectionReason::BlockedCell);
                 };
                 if self.state.blocked(to) {
@@ -1184,14 +1354,21 @@ impl Simulation {
                 if self.state.has_bomb(player.cell) {
                     return Err(RejectionReason::BombAlreadyPresent);
                 }
-                if self.state.bombs.iter().any(|bomb| bomb.owner == *actor) {
+                if self
+                    .state
+                    .bombs
+                    .iter()
+                    .filter(|bomb| bomb.owner == *actor)
+                    .count()
+                    >= usize::from(self.state.rules.max_bombs_per_player)
+                {
                     return Err(RejectionReason::BombLimit);
                 }
                 Ok(AuthoritativeCommand::PlaceBomb {
                     actor: *actor,
                     bomb: self.state.next_bomb_id,
                     cell: player.cell,
-                    fuse_ticks: self.bomb_fuse_ticks,
+                    fuse_ticks: self.state.rules.bomb_fuse_ticks,
                 })
             }
         }
@@ -1237,6 +1414,7 @@ fn apply_and_record(
 pub struct Replay {
     pub protocol_version: u16,
     pub ruleset_id: &'static str,
+    pub definition_hash: DefinitionHash,
     pub initial_state_hash: StateHash,
     pub frames: Vec<TickInputFrame>,
     pub state_hashes: Vec<StateHash>,
@@ -1244,12 +1422,21 @@ pub struct Replay {
 
 impl Replay {
     pub fn record(frames: &[TickInputFrame]) -> Result<Self, SimulationError> {
-        let mut simulation = Simulation::new();
-        let initial_state_hash = simulation.state.hash();
+        Self::record_with_definition(&BOMBERMAN_DEFINITION, frames)
+    }
+
+    pub fn record_with_definition(
+        definition: &BombermanDefinition,
+        frames: &[TickInputFrame],
+    ) -> Result<Self, SimulationError> {
+        let mut simulation =
+            Simulation::from_definition(definition).map_err(SimulationError::Map)?;
+        let initial_state_hash = simulation.state().hash();
         let state_hashes = simulation.run_hashes(frames)?;
         Ok(Self {
             protocol_version: PROTOCOL_VERSION,
-            ruleset_id: RULESET_ID,
+            ruleset_id: definition.ruleset_id,
+            definition_hash: definition.definition_hash,
             initial_state_hash,
             frames: frames.to_vec(),
             state_hashes,
@@ -1257,11 +1444,21 @@ impl Replay {
     }
 
     pub fn verify(&self) -> Result<(), ReplayError> {
-        if self.protocol_version != PROTOCOL_VERSION || self.ruleset_id != RULESET_ID {
+        self.verify_with_definition(&BOMBERMAN_DEFINITION)
+    }
+
+    pub fn verify_with_definition(
+        &self,
+        definition: &BombermanDefinition,
+    ) -> Result<(), ReplayError> {
+        if self.protocol_version != PROTOCOL_VERSION
+            || self.ruleset_id != definition.ruleset_id
+            || self.definition_hash != definition.definition_hash
+        {
             return Err(ReplayError::Incompatible);
         }
-        let mut simulation = Simulation::new();
-        if simulation.state.hash() != self.initial_state_hash {
+        let mut simulation = Simulation::from_definition(definition).map_err(ReplayError::Map)?;
+        if simulation.state().hash() != self.initial_state_hash {
             return Err(ReplayError::InitialStateMismatch);
         }
         for (index, frame) in self.frames.iter().enumerate() {
@@ -1285,6 +1482,7 @@ impl Replay {
 pub enum ReplayError {
     Incompatible,
     InitialStateMismatch,
+    Map(MapError),
     Simulation(SimulationError),
     Diverged {
         frame: usize,
@@ -1383,17 +1581,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stage1_map_fixture_loads_into_authoritative_state() {
-        let document = ArenaMapDocument::load_json(include_str!(
-            "../../../demo/pipe_arena/assets/maps/stage1.json"
-        ))
-        .expect("map JSON parses");
-        let map = document.validate().expect("map validates");
-        assert_eq!(map.players.len(), 2);
-        assert_eq!(map.indestructible_walls.len(), 20);
-        assert_eq!(map.destructible_walls.len(), 12);
-        let simulation = Simulation::from_map(&document).expect("simulation loads map");
-        assert_eq!(simulation.state.players, map.players);
+    fn generated_bomberman_definition_compiles_to_runtime_program() {
+        let compiled = BOMBERMAN_DEFINITION
+            .compile()
+            .expect("generated definition compiles");
+        assert_eq!(compiled.map.width, ARENA_WIDTH);
+        assert_eq!(compiled.map.height, ARENA_HEIGHT);
+        assert_eq!(compiled.players.len(), 2);
+        assert_eq!(compiled.rules.bomb_fuse_ticks, 27);
+        assert_eq!(compiled.rules.bomb_radius, 2);
+        let simulation =
+            Simulation::from_definition(&BOMBERMAN_DEFINITION).expect("definition runs");
+        assert_eq!(simulation.state().rules, compiled.rules);
+        assert_eq!(simulation.state().players[0].cell, Cell::new(1, 1));
     }
 
     #[test]
@@ -1401,7 +1601,7 @@ mod tests {
         let error = ArenaMapDocument::load_json(
             r#"{
                 "schema_version": 1,
-                "ruleset_id": "pipe_arena_stage1",
+                "ruleset_id": "bomberman_stage1",
                 "width": 13,
                 "height": 11,
                 "spawns": [{"actor": 1, "x": 1, "y": 1}],
@@ -1431,8 +1631,38 @@ mod tests {
         )
         .expect("valid input");
         let decoded = TickInputFrame::decode(&frame.encode()).expect("decode succeeds");
-        assert_eq!(decoded.players[0].player, 1);
+        assert_eq!(decoded.players()[0].player, 1);
         assert_eq!(decoded, frame);
+    }
+
+    #[test]
+    fn gameplay_pipe_emits_move_intent() {
+        let state = GameState::initial();
+        let frame = TickInputFrame::new(
+            0,
+            vec![PlayerInput {
+                player: 1,
+                direction: Direction::Right,
+                place_bomb: false,
+            }],
+        )
+        .expect("valid input frame");
+        let input = InterpreterInput {
+            view: WorldView::new(&state),
+            frame: &frame,
+        };
+        let mut interpreter = RustGameplayInterpreter;
+        let mut output = BoundedBuffer::new(1);
+
+        interpreter.run(&input, &mut output).expect("pipe succeeds");
+
+        assert_eq!(
+            output.as_slice(),
+            &[Intent::Move {
+                actor: 1,
+                direction: Direction::Right,
+            }]
+        );
     }
 
     #[test]
@@ -1459,7 +1689,7 @@ mod tests {
         assert!(result.commands.is_empty());
         assert_eq!(result.rejections.len(), 1);
         assert_eq!(
-            simulation.state.player(1).expect("player exists").cell,
+            simulation.state().player(1).expect("player exists").cell,
             Cell::new(1, 1)
         );
     }
@@ -1467,7 +1697,8 @@ mod tests {
     #[test]
     fn bomb_expires_and_emits_events() {
         let mut simulation = Simulation::new();
-        let frames = (0..BOMB_FUSE_TICKS)
+        let fuse_ticks = RulesetConfig::default().bomb_fuse_ticks;
+        let frames = (0..fuse_ticks)
             .map(|tick| {
                 TickInputFrame::new(
                     u64::from(tick),
@@ -1496,7 +1727,7 @@ mod tests {
                 .flat_map(|result| &result.events)
                 .any(|event| matches!(event, PresentationEvent::BombExploded { .. }))
         );
-        assert!(simulation.state.bombs.is_empty());
+        assert!(simulation.state().bombs.is_empty());
     }
 
     #[test]
@@ -1539,12 +1770,68 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, PresentationEvent::BombExploded { .. }))
         );
-        assert!(simulation.state.bombs.is_empty());
+        assert!(simulation.state().bombs.is_empty());
+    }
+
+    #[test]
+    fn simulation_rejects_noncanonical_deserialized_frame() {
+        let frame: TickInputFrame = serde_json::from_str(
+            r#"{
+                "tick": 0,
+                "players": [
+                    {"player": 2, "direction": "None", "place_bomb": false},
+                    {"player": 1, "direction": "None", "place_bomb": false}
+                ]
+            }"#,
+        )
+        .expect("frame JSON parses");
+        let mut simulation = Simulation::new();
+        let error = simulation
+            .step(&frame)
+            .expect_err("noncanonical frame must be rejected");
+        assert!(matches!(
+            error,
+            SimulationError::Protocol(ProtocolError::UnsortedPlayers)
+        ));
+        assert_eq!(simulation.state().tick, 0);
+    }
+
+    #[test]
+    fn simulation_rejects_oversized_deserialized_frame() {
+        let frame: TickInputFrame = serde_json::from_str(
+            r#"{
+                "tick": 0,
+                "players": [
+                    {"player": 1, "direction": "None", "place_bomb": false},
+                    {"player": 2, "direction": "None", "place_bomb": false},
+                    {"player": 3, "direction": "None", "place_bomb": false},
+                    {"player": 4, "direction": "None", "place_bomb": false},
+                    {"player": 5, "direction": "None", "place_bomb": false}
+                ]
+            }"#,
+        )
+        .expect("frame JSON parses");
+        let mut simulation = Simulation::new();
+        let error = simulation
+            .step(&frame)
+            .expect_err("oversized frame must be rejected");
+        assert!(matches!(
+            error,
+            SimulationError::Protocol(ProtocolError::TooManyPlayers(5))
+        ));
+        assert_eq!(simulation.state().tick, 0);
     }
 
     #[test]
     fn replay_reproduces_hashes() {
         let replay = Replay::record(&scripted_frames()).expect("record succeeds");
         replay.verify().expect("replay verifies");
+    }
+
+    #[test]
+    fn replay_rejects_definition_hash_mismatch() {
+        let mut replay = Replay::record(&scripted_frames()).expect("record succeeds");
+        replay.definition_hash[0] ^= 1;
+        assert!(matches!(replay.verify(), Err(ReplayError::Incompatible)));
     }
 }

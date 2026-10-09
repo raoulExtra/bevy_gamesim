@@ -1,0 +1,146 @@
+// Deterministic 3D airfight training scenario.
+// Two ten-ship formations compete for firing solutions among meteorites.
+// This design references the Blender assets in the sibling assets directory.
+
+game airtrain {
+  schema 1
+
+  assets {
+    side_fighter {
+      source "assets/side_fighter.blend"
+      model_collection "side_fighter"
+    }
+
+    winger {
+      source "assets/winger.blend"
+      model_collection "winger"
+    }
+  }
+
+  space {
+    dimension 3d
+    bounds {
+      min (-2000m, -1200m, -900m)
+      max (2000m, 1200m, 900m)
+    }
+    gravity none
+    atmosphere none
+    tick_rate 60 hz
+    seed 0x5a17_2026
+  }
+
+  meteorites {
+    count 80
+    field scattered
+    radius 18m by 95m
+    velocity drift 4m/s by 22m/s
+    collision solid
+    line_of_fire occludes
+    placement random seed 0x6d3e_7a11
+  }
+
+  factions {
+    empire {
+      ship_category tie_fighter
+      asset assets/side_fighter.blend
+      count 10
+      formation wedge spacing 55m
+      spawn volume {
+        min (-1500m, -700m, -500m)
+        max (-900m, 700m, 500m)
+      }
+      objective eliminate opposing_faction
+    }
+
+    rebels {
+      ship_category winger
+      asset assets/winger.blend
+      count 10
+      formation wedge spacing 70m
+      spawn volume {
+        min (900m, -700m, -500m)
+        max (1500m, 700m, 500m)
+      }
+      objective eliminate opposing_faction
+    }
+  }
+
+  ships {
+    sensor_range 1400m
+    minimum_separation 28m
+    maximum_speed 180m/s
+    maximum_turn_rate 2.4 rad/s
+    collision_damage proportional_to_closing_speed
+
+    weapons {
+      primary laser {
+        range 900m
+        cooldown 0.45s
+        damage 12
+        requires line_of_fire
+        requires target_in_forward_arc 42deg
+      }
+      torpedo {
+        range 1200m
+        cooldown 8s
+        damage 55
+        lock_time 1.5s
+        requires line_of_fire
+        requires target_in_forward_arc 18deg
+      }
+    }
+  }
+
+  tactics {
+    objective maximize_shoot_position {
+      evaluate every 6 ticks
+      candidate samples 24
+      score {
+        target_aspect 30%
+        weapon_range 25%
+        forward_arc 20%
+        line_of_fire 15%
+        meteorite_cover 10%
+      }
+      reject {
+        meteorite_collision
+        friendly_collision
+        blocked_line_of_fire
+        outside_sensor_range
+      }
+      move toward highest_scoring_candidate
+      break_attack_if survival_score_below 20%
+    }
+
+    pursuit {
+      target_selection highest_threat_then_nearest
+      offset random seed 0x1138 per_ship distinct
+      evade when incoming_weapon_lock
+      use_meteorites_for_cover true
+    }
+
+    formations {
+      maintain until first_contact
+      regroup when squadron_size_below 4
+      regroup_radius 260m
+      avoid friendly_fire true
+    }
+  }
+
+  combat {
+    start after 5s
+    first_contact distance 800m
+    victory when faction_has_no_active_ships
+    draw when time_limit 900s and both_factions_active
+    respawn none
+    friendly_fire false
+  }
+
+  telemetry {
+    show active_ships_by_faction
+    show meteorite_count
+    show selected_target
+    show best_shoot_position_score
+    record firing_solution_changes
+  }
+}

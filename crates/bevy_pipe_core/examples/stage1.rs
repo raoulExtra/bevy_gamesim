@@ -1,31 +1,32 @@
 use bevy_pipe_core::{
-    ArenaMapDocument, ExpectedRunDocument, InputFixtureDocument, Simulation, TickResult,
+    BOMBERMAN_DEFINITION, ExpectedRunDocument, InputFixtureDocument, Simulation, TickResult,
 };
 use std::{env, fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let map_path = root.join("demo/pipe_arena/assets/maps/stage1.json");
-    let input_path = root.join("demo/pipe_arena/replays/stage1-input.json");
-    let expected_path = root.join("demo/pipe_arena/replays/stage1-expected.json");
+    let input_path = root.join("demo/bomberman/replays/stage1-input.json");
+    let expected_path = root.join("demo/bomberman/replays/stage1-expected.json");
     let write_expected = env::args()
         .skip(1)
         .any(|argument| argument == "--write-expected");
 
-    let map = ArenaMapDocument::load_json(&fs::read_to_string(&map_path)?)?;
-    map.validate()?;
     let input = InputFixtureDocument::load_json(&fs::read_to_string(&input_path)?)?;
     let frames = input.to_frames()?;
 
-    let mut simulation = Simulation::from_map(&map)?;
-    let initial_state_hash = simulation.state.hash();
+    let mut simulation = Simulation::from_definition(&BOMBERMAN_DEFINITION)?;
+    let initial_state_hash = simulation.state().hash();
     let results = frames
         .iter()
         .map(|frame| simulation.step(frame))
         .collect::<Result<Vec<_>, _>>()?;
 
     if write_expected {
-        let expected = ExpectedRunDocument::from_results(initial_state_hash, &results);
+        let expected = ExpectedRunDocument::from_results(
+            BOMBERMAN_DEFINITION.definition_hash,
+            initial_state_hash,
+            &results,
+        );
         fs::write(
             &expected_path,
             serde_json::to_string_pretty(&expected)? + "\n",
@@ -41,18 +42,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let expected = ExpectedRunDocument::load_json(&fs::read_to_string(&expected_path)?)?;
     compare_run(&expected, initial_state_hash, &results)?;
 
-    let mut repeat = Simulation::from_map(&map)?;
+    let mut repeat = Simulation::from_definition(&BOMBERMAN_DEFINITION)?;
     for frame in &frames {
         repeat.step(frame)?;
     }
-    if repeat.state.hash() != simulation.state.hash() {
+    if repeat.state().hash() != simulation.state().hash() {
         return Err("first divergence: repeated run final state hash differs".into());
     }
 
     println!(
-        "stage1 pipeline: map validated, {} ticks matched, final hash {:016x}",
+        "stage1 pipeline: generated definition loaded, {} ticks matched, final hash {:016x}",
         results.len(),
-        simulation.state.hash()
+        simulation.state().hash()
     );
     Ok(())
 }
@@ -69,8 +70,11 @@ fn compare_run(
         )
         .into());
     }
-    if expected.ruleset_id != "pipe_arena_stage1" {
+    if expected.ruleset_id != "bomberman_stage1" {
         return Err(format!("fixture metadata mismatch: ruleset {}", expected.ruleset_id).into());
+    }
+    if expected.definition_hash != BOMBERMAN_DEFINITION.definition_hash {
+        return Err("fixture metadata mismatch: definition hash".into());
     }
     if expected.initial_state_hash != initial_state_hash {
         return Err(format!(

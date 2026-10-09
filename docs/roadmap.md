@@ -28,7 +28,7 @@ Responsibilities:
 
 ## Stage 1: deterministic local loop
 
-Implemented in `crates/bevy_pipe_core` and `demo/pipe_arena`:
+Implemented in `crates/bevy_pipe_core` and `demo/bomberman`:
 
 - explicit simulation tick;
 - deterministic, versioned input frames;

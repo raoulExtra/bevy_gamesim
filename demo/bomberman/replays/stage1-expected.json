@@ -1,0 +1,179 @@
+{
+  "protocol_version": 1,
+  "ruleset_id": "bomberman_stage1",
+  "definition_hash": [
+    164,
+    179,
+    47,
+    250,
+    145,
+    72,
+    202,
+    63,
+    187,
+    226,
+    110,
+    241,
+    144,
+    132,
+    138,
+    145,
+    105,
+    110,
+    141,
+    193,
+    158,
+    162,
+    40,
+    72,
+    69,
+    5,
+    150,
+    78,
+    255,
+    53,
+    157,
+    124
+  ],
+  "initial_state_hash": 2323090238457700611,
+  "ticks": [
+    {
+      "tick": 0,
+      "commands": [
+        {
+          "Move": {
+            "actor": 1,
+            "from": {
+              "x": 1,
+              "y": 1
+            },
+            "to": {
+              "x": 2,
+              "y": 1
+            }
+          }
+        },
+        {
+          "Move": {
+            "actor": 2,
+            "from": {
+              "x": 498,
+              "y": 498
+            },
+            "to": {
+              "x": 497,
+              "y": 498
+            }
+          }
+        }
+      ],
+      "events": [
+        {
+          "RandomBombBatchPlaced": {
+            "count": 100
+          }
+        }
+      ],
+      "rejections": [],
+      "state_hash": 18104705167888138856
+    },
+    {
+      "tick": 1,
+      "commands": [
+        {
+          "Move": {
+            "actor": 1,
+            "from": {
+              "x": 2,
+              "y": 1
+            },
+            "to": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        },
+        {
+          "Move": {
+            "actor": 2,
+            "from": {
+              "x": 497,
+              "y": 498
+            },
+            "to": {
+              "x": 496,
+              "y": 498
+            }
+          }
+        }
+      ],
+      "events": [],
+      "rejections": [],
+      "state_hash": 6100902747973643839
+    },
+    {
+      "tick": 2,
+      "commands": [
+        {
+          "PlaceBomb": {
+            "actor": 1,
+            "bomb": 101,
+            "cell": {
+              "x": 3,
+              "y": 1
+            },
+            "fuse_ticks": 27
+          }
+        }
+      ],
+      "events": [
+        {
+          "BombPlaced": {
+            "bomb": 101,
+            "cell": {
+              "x": 3,
+              "y": 1
+            }
+          }
+        }
+      ],
+      "rejections": [],
+      "state_hash": 14924372580793775206
+    },
+    {
+      "tick": 3,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 1529845460155090104
+    },
+    {
+      "tick": 4,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 4284081118331337590
+    },
+    {
+      "tick": 5,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 968274254352918652
+    },
+    {
+      "tick": 6,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 11029434904575852222
+    },
+    {
+      "tick": 7,
+      "commands": [],
+      "events": [],
+      "rejections": [],
+      "state_hash": 11639217885996359152
+    }
+  ]
+}

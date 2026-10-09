@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "ruleset_id": "bomberman_stage1",
+  "arena": {
+    "width": 500,
+    "height": 500,
+    "indestructible_walls": [],
+    "destructible_walls": []
+  },
+  "rules": {
+    "tick_hz": 64,
+    "bomb_fuse_ticks": 27,
+    "bomb_radius": 2,
+    "max_bombs_per_player": 1,
+    "random_bomb_batch_size": 100,
+    "random_bomb_interval_ticks": 100,
+    "random_bomb_seed": 305419896
+  },
+  "players": [
+    { "actor": 1, "spawn": { "x": 1, "y": 1 } },
+    { "actor": 2, "spawn": { "x": 498, "y": 498 } }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "signal_block_length": 360.0,
+  "signal_stop_distance": 58.0,
+  "green_delay_ms": 4000
+}

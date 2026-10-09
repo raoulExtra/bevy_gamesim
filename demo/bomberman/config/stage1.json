@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "movement_delay_ms": 180,
+  "help_hint": "F1 = ?",
+  "win_format": "WON {score1}:{score2}",
+  "players": [
+    {
+      "actor": 1,
+      "color": [ 0, 180, 255 ],
+      "keys": {
+        "up": "KeyW",
+        "right": "KeyD",
+        "down": "KeyS",
+        "left": "KeyA",
+        "bomb": "Space"
+      }
+    },
+    {
+      "actor": 2,
+      "color": [ 180, 80, 255 ],
+      "keys": {
+        "up": "ArrowUp",
+        "right": "ArrowRight",
+        "down": "ArrowDown",
+        "left": "ArrowLeft",
+        "bomb": "Enter"
+      }
+    }
+  ]
+}

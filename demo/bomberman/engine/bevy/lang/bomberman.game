@@ -1,0 +1,31 @@
+// The authoritative Bomberman ruleset.
+// Presentation settings stay in ../config/stage1.json.
+
+game bomberman_stage1 {
+  schema 1
+
+  arena {
+    size 500 by 500
+    indestructible_walls {}
+    destructible_walls {}
+  }
+
+  rules {
+    tick_rate 64 hz
+
+    bomb {
+      fuse 27 ticks
+      radius 2 cells
+      max_per_player 1
+    }
+
+    random_bombs {
+      batch 100
+      every 100 ticks
+      seed 0x12345678
+    }
+  }
+
+  player 1 at (1, 1)
+  player 2 at (498, 498)
+}
